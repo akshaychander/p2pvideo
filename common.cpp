@@ -141,6 +141,59 @@ File::updateBlockInfo(const BlockMap& b) {
 	blockInfo = b;
 }
 
+char *
+File::serialize(int &size) const {
+	char *data;
+	int offset = 0, block_data_size;
+
+	char *blockdata = blockInfo.serialize(block_data_size);
+	int url_size = url.length();
+	/*
+	 * Int to store size of the string, followed by actual string
+	 * and then the size of the BlockMap data followed by the
+	 * BlockMap data.
+	 */
+	size = sizeof(int) + url_size + sizeof(int) + block_data_size;
+
+	data = new char[size];
+	memcpy(data, (char *)&url_size, sizeof(int));
+	offset += sizeof(int);
+
+	const char *tmp = url.c_str();
+	memcpy(data + offset, tmp, url_size);
+	offset += url_size;
+	memcpy(data + offset, (char *)&block_data_size, sizeof(int));
+	offset += sizeof(int);
+	memcpy(data + offset, blockdata, block_data_size);
+
+	// No longer need the packed blockdata.
+	free(blockdata);
+	return data;
+}
+
+void
+File::deserialize(char *data, const int& size) {
+	int offset = 0;
+	char *tmp;
+	int	url_len;
+	int block_data_size;
+	
+	memcpy((char *)&url_len, data, sizeof(int));
+	offset += sizeof(int);
+
+	tmp = new char[url_len + 1];
+	memcpy(tmp, data + offset, url_len);
+	offset += url_len;
+	tmp[url_len] = '\0';
+	url = tmp;
+	free(tmp);
+
+	memcpy((char *)&block_data_size, data + offset, sizeof(int));
+	offset += sizeof(int);
+
+	blockInfo.deserialize(data + offset, block_data_size);
+}
+
 Client::Client(string ip_address, int port, string directory) {
 	this->ip_address = ip_address;
 	this->port = port;
