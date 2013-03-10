@@ -108,6 +108,9 @@ BlockMap::deserialize(char *data, const int& size) {
 
 }
 
+File::File() {
+}
+
 File::File(string url) {
 	this->url = url;
 	BlockMap tmp(getNumBlocks(url), false);
@@ -162,6 +165,7 @@ File::serialize(int &size) const {
 	const char *tmp = url.c_str();
 	memcpy(data + offset, tmp, url_size);
 	offset += url_size;
+
 	memcpy(data + offset, (char *)&block_data_size, sizeof(int));
 	offset += sizeof(int);
 	memcpy(data + offset, blockdata, block_data_size);
@@ -220,4 +224,124 @@ Client::getFileIdxByURL(const string& url) const {
 void
 Client::updateFile(const int& file_idx, const BlockMap& b) {
 	files[file_idx].updateBlockInfo(b);
+}
+
+/*
+ * Not including peer information at the moment.
+ * Need to revisit.
+ */
+char *
+Client::serialize(int& size) const {
+	int offset = 0, string_length, num_files;
+	char *data, *file_data;
+	const char* tmp;
+
+	size = sizeof(int) + ip_address.length() +	//Length of URL and the URL
+			2 * sizeof(int) +					//port and socketfd
+			sizeof(int) + directory.length() +	//Length of directory and directory
+			sizeof(int);						//Number of files
+
+
+	data = new char[size];
+
+	string_length = ip_address.length();
+	memcpy(data, (char *)&string_length, sizeof(int));
+	offset += sizeof(int);
+
+	tmp = ip_address.c_str();
+	memcpy(data + offset, tmp, string_length);
+	offset += string_length;
+
+	memcpy(data + offset, (char *)&port, sizeof(int));
+	offset += sizeof(int);
+
+	// Probably unnecessary but why not?
+	memcpy(data + offset, (char *)&socketfd, sizeof(int));
+	offset += sizeof(int);
+
+	string_length = directory.length();
+	memcpy(data, (char *)&string_length, sizeof(int));
+	offset += sizeof(int);
+
+	tmp = directory.c_str();
+	memcpy(data + offset, tmp, string_length);
+	offset += string_length;
+
+	num_files = files.size();
+	memcpy(data + offset, (char *)&num_files, sizeof(int));
+	offset += sizeof(int);
+
+	for (int i = 0; i < files.size(); i++) {
+		int file_size;
+		file_data = files[i].serialize(file_size);
+		if (!file_data) {
+			cout<<"File "<<i<<" could not be serialized!"<<endl;
+			continue;
+		}
+		size += sizeof(int) + file_size;	//File length and the File
+		data = (char *)realloc(data, size);
+		if (!data) {
+			cout<<"Client::serialize Memory allocation failure!"<<endl;
+			abort();
+			return NULL;
+		}
+		memcpy(data + offset, (char *)&file_size, sizeof(int));
+		offset += file_size;
+
+		memcpy(data + offset, file_data, file_size);
+		offset += file_size;
+		free(file_data);
+	}
+	return data;
+}
+
+void
+Client::deserialize(const char *data, const int& size) {
+	int offset = 0, num_files, file_size, tmp_num;
+	char *tmp, *file_data;
+
+	memcpy((char *)&tmp_num, data, sizeof(int));
+	offset += sizeof(int);
+
+	tmp = new char[tmp_num + 1];
+	memcpy(tmp, data + offset, tmp_num);
+	offset += tmp_num;
+	tmp[tmp_num] = '\0';
+	ip_address = tmp;
+	free(tmp);
+
+	memcpy((char *)&tmp_num, data + offset, sizeof(int));
+	offset += sizeof(int);
+	port = tmp_num;
+
+	memcpy((char *)&tmp_num, data + offset, sizeof(int));
+	offset += sizeof(int);
+	socketfd = tmp_num;
+
+	memcpy((char *)&tmp_num, data, sizeof(int));
+	offset += sizeof(int);
+
+	tmp = new char[tmp_num + 1];
+	memcpy(tmp, data + offset, tmp_num);
+	offset += tmp_num;
+	tmp[tmp_num] = '\0';
+	directory = tmp;
+	free(tmp);
+
+	memcpy((char *)&num_files, data + offset, sizeof(int));
+	offset += sizeof(int);
+
+	for (int i = 0; i < num_files; i++) {
+		File f;
+		memcpy((char *)&file_size, data + offset, sizeof(int));
+		offset += sizeof(int);
+
+		file_data = new char[file_size];
+		memcpy(file_data, data + offset, file_size);
+		offset += file_size;
+
+		f.deserialize(file_data, file_size);
+		files.push_back(f);
+		free(file_data);
+	}
 }

@@ -52,6 +52,8 @@ class File {
 	BlockMap blockInfo;
 
 	public:
+		File();
+
 		File(string url);
 
 		File(string url, int numBlocks, bool hasData);
@@ -78,9 +80,16 @@ class Client {
 	vector<Client>	peers;
 
 	public:
-	Client(string ip, int port, string dir);
-	string getIP() const;
-	int getFileIdxByURL(const string& url) const;
-	void updateFile(const int& file_idx, const BlockMap& b);
+		Client(string ip, int port, string dir);
+
+		string getIP() const;
+
+		int getFileIdxByURL(const string& url) const;
+
+		void updateFile(const int& file_idx, const BlockMap& b);
+
+		char *serialize(int& size) const;
+
+		void deserialize(const char *data, const int& size);
 };
 
