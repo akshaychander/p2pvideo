@@ -80,6 +80,8 @@ class Client {
 	vector<Client>	peers;
 
 	public:
+		Client();
+
 		Client(string ip, int port, string dir);
 
 		string getIP() const;

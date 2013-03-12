@@ -198,6 +198,9 @@ File::deserialize(char *data, const int& size) {
 	blockInfo.deserialize(data + offset, block_data_size);
 }
 
+Client::Client() {
+}
+
 Client::Client(string ip_address, int port, string directory) {
 	this->ip_address = ip_address;
 	this->port = port;
