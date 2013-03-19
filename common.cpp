@@ -348,3 +348,27 @@ Client::deserialize(const char *data, const int& size) {
 		free(file_data);
 	}
 }
+
+int
+bindToPort(const string& ip, const int& port) {
+	int sockfd;
+	struct addrinfo hints, *s_addr;
+	char service[10];
+
+	sprintf(service, "%d", port); 
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+
+	getaddrinfo(NULL, service, &hints, &s_addr);
+	sockfd = socket(s_addr->ai_family, s_addr->ai_socktype, s_addr->ai_protocol);
+	if (sockfd == -1) {
+		return -1;
+	}
+	if (bind(sockfd, s_addr->ai_addr, s_addr->ai_addrlen) == 0) {
+		return sockfd;
+	} else {
+		return -1;
+	}
+}

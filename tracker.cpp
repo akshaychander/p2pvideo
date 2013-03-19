@@ -1,5 +1,7 @@
 #include "tracker.h"
 
+int port = 7500, sockfd;
+
 Tracker::Tracker(int port) {
 	this->port = port;
 }
@@ -36,5 +38,21 @@ Tracker::update(Client& clnt, const File& file) {
 }
 
 int main() {
+	string ip = "127.0.0.1";
+	sockfd = bindToPort(ip, port);
+	if (sockfd != -1) {
+		Tracker t(port);
+
+	} else {
+		cout<<"Could not create socket or bind to port"<<endl;
+		abort();
+		exit (1);
+	}
+
+	while (listen(sockfd, BACKLOG)) {
+		/* listen and accept incoming connections */
+		struct sockaddr_storage incoming;
+		int incoming_sz = sizeof(incoming);
+	}
 	return 0;
 }

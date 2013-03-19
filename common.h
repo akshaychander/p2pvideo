@@ -3,10 +3,25 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <cstdio>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <sys/wait.h>
+#include <signal.h>
 
 using namespace std;
 
 #define RANGE_LEN	5
+#define BACKLOG		20
+
+enum {
+	TRACKER_OP_REGISTER = 0,
+	TRACKER_OP_QUERY,
+	TRACKER_OP_UPDATE
+};
 
 /*
  * Each File will have a corresponding BlockMap associated with it.
@@ -93,5 +108,8 @@ class Client {
 		char *serialize(int& size) const;
 
 		void deserialize(const char *data, const int& size);
+
 };
 
+/* Bind to given port and return socket fd */
+int bindToPort(const string& ip, const int& port);
