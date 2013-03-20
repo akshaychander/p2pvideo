@@ -16,11 +16,13 @@ using namespace std;
 
 #define RANGE_LEN	5
 #define BACKLOG		20
+#define HEADER_SZ	2 * sizeof(int)
 
 enum {
 	TRACKER_OP_REGISTER = 0,
 	TRACKER_OP_QUERY,
-	TRACKER_OP_UPDATE
+	TRACKER_OP_UPDATE,
+	TRACKER_OP_KEEP_ALIVE
 };
 
 /*
@@ -54,6 +56,8 @@ class BlockMap {
 		char *serialize(int& size) const;
 
 		void deserialize(char *data, const int& size);
+
+		void print();
 };
 
 /*
@@ -84,6 +88,8 @@ class File {
 		char *serialize(int& size) const;
 
 		void deserialize(char *data, const int& size);
+
+		void print();
 };
 
 class Client {
@@ -109,6 +115,9 @@ class Client {
 
 		void deserialize(const char *data, const int& size);
 
+		void print();
+
+		void addFile(File f); //for debugging
 };
 
 /* Bind to given port and return socket fd */

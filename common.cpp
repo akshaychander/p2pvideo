@@ -108,6 +108,17 @@ BlockMap::deserialize(char *data, const int& size) {
 
 }
 
+void BlockMap::print() {
+	cout<<"numBlocks: "<<numBlocks<<endl;
+	cout<<"currentBlock: "<<currentBlock<<endl;
+	for (int i = 0; i < numBlocks; i++) {
+		if (blocks[i] == true)
+			cout<<"Block "<<i<<": True"<<endl;
+		else
+			cout<<"Block "<<i<<": False"<<endl;
+	}
+}
+
 File::File() {
 }
 
@@ -171,7 +182,7 @@ File::serialize(int &size) const {
 	memcpy(data + offset, blockdata, block_data_size);
 
 	// No longer need the packed blockdata.
-	free(blockdata);
+	delete[] blockdata;
 	return data;
 }
 
@@ -190,12 +201,17 @@ File::deserialize(char *data, const int& size) {
 	offset += url_len;
 	tmp[url_len] = '\0';
 	url = tmp;
-	free(tmp);
+	delete[] tmp;
 
 	memcpy((char *)&block_data_size, data + offset, sizeof(int));
 	offset += sizeof(int);
 
 	blockInfo.deserialize(data + offset, block_data_size);
+}
+
+void File::print() {
+	cout<<"URL: "<<url<<endl;
+	blockInfo.print();
 }
 
 Client::Client() {
@@ -205,6 +221,7 @@ Client::Client(string ip_address, int port, string directory) {
 	this->ip_address = ip_address;
 	this->port = port;
 	this->directory = directory;
+	this->socketfd = -1;	//for debugging
 	/* Bind to port and store the socketfd */
 	/* Initialize list of files and blockmaps */
 }
@@ -245,7 +262,7 @@ Client::serialize(int& size) const {
 			sizeof(int);						//Number of files
 
 
-	data = new char[size];
+	data = (char *)malloc(sizeof(char) * size);
 
 	string_length = ip_address.length();
 	memcpy(data, (char *)&string_length, sizeof(int));
@@ -263,7 +280,7 @@ Client::serialize(int& size) const {
 	offset += sizeof(int);
 
 	string_length = directory.length();
-	memcpy(data, (char *)&string_length, sizeof(int));
+	memcpy(data + offset, (char *)&string_length, sizeof(int));
 	offset += sizeof(int);
 
 	tmp = directory.c_str();
@@ -289,11 +306,11 @@ Client::serialize(int& size) const {
 			return NULL;
 		}
 		memcpy(data + offset, (char *)&file_size, sizeof(int));
-		offset += file_size;
+		offset += sizeof(int);
 
 		memcpy(data + offset, file_data, file_size);
 		offset += file_size;
-		free(file_data);
+		delete[] file_data;
 	}
 	return data;
 }
@@ -321,7 +338,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += sizeof(int);
 	socketfd = tmp_num;
 
-	memcpy((char *)&tmp_num, data, sizeof(int));
+	memcpy((char *)&tmp_num, data + offset, sizeof(int));
 	offset += sizeof(int);
 
 	tmp = new char[tmp_num + 1];
@@ -349,6 +366,21 @@ Client::deserialize(const char *data, const int& size) {
 	}
 }
 
+void Client::print() {
+	cout<<"ip_address: "<<ip_address<<endl;
+	cout<<"port: "<<port<<endl;
+	cout<<"socketfd: "<<socketfd<<endl;
+	cout<<"directory: "<<directory<<endl;
+	for (int i = 0; i < files.size(); i++) {
+		cout<<"File "<<i<<endl;
+		files[i].print();
+	}
+}
+
+void Client::addFile(File f) {
+	files.push_back(f);
+}
+
 int
 bindToPort(const string& ip, const int& port) {
 	int sockfd;
@@ -361,10 +393,15 @@ bindToPort(const string& ip, const int& port) {
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
 
-	getaddrinfo(NULL, service, &hints, &s_addr);
+	getaddrinfo(ip.c_str(), service, &hints, &s_addr);
 	sockfd = socket(s_addr->ai_family, s_addr->ai_socktype, s_addr->ai_protocol);
 	if (sockfd == -1) {
 		return -1;
+	}
+	int yes = 1;
+	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+		cout<<"Reusesocket failed"<<endl;
+		exit(1);
 	}
 	if (bind(sockfd, s_addr->ai_addr, s_addr->ai_addrlen) == 0) {
 		return sockfd;
@@ -372,3 +409,4 @@ bindToPort(const string& ip, const int& port) {
 		return -1;
 	}
 }
+

@@ -1,5 +1,8 @@
 #include "tracker.h"
+#include <pthread.h>
+#include <assert.h>
 
+#define MAX_THREADS	20
 int port = 7500, sockfd;
 
 Tracker::Tracker(int port) {
@@ -37,6 +40,29 @@ Tracker::update(Client& clnt, const File& file) {
 	clnt.updateFile(file_idx, file.getBlockInfo());
 }
 
+void *
+handleClient(void *clientsockfd) {
+	long clientfd = (long)clientsockfd;
+	cout<<"in thread for fd = "<<clientfd<<endl;
+	char header[HEADER_SZ];
+	// Receive requests from the client and send back data
+	while (1) {
+		memset(header, 0, HEADER_SZ);
+		int bytes_rcvd = recv(clientfd, header, HEADER_SZ, 0);
+		assert(bytes_rcvd == HEADER_SZ);
+		int op, packet_size;
+		memcpy((char *)&op, header, sizeof(int));
+		memcpy((char *)&packet_size, header + sizeof(int), sizeof(int));
+		cout<<"op = "<<op<<" packet_size = "<<packet_size<<endl;
+		char data[packet_size];
+		bytes_rcvd = recv(clientfd, data, packet_size, 0);
+		assert(bytes_rcvd == packet_size);
+		Client c;
+		c.deserialize(data, packet_size);
+		c.print();
+	}
+}
+
 int main() {
 	string ip = "127.0.0.1";
 	sockfd = bindToPort(ip, port);
@@ -48,11 +74,21 @@ int main() {
 		abort();
 		exit (1);
 	}
-
-	while (listen(sockfd, BACKLOG)) {
+	pthread_t threads[MAX_THREADS];
+	int thread_id = 0;
+	while (listen(sockfd, BACKLOG) == 0) {
 		/* listen and accept incoming connections */
 		struct sockaddr_storage incoming;
-		int incoming_sz = sizeof(incoming);
+		socklen_t incoming_sz;
+		long new_fd = accept(sockfd, (struct sockaddr *)&incoming, &incoming_sz);
+		if (new_fd == -1) {
+			cout<<"accept failed\n";
+		} else {
+			if( pthread_create(&threads[thread_id], NULL, handleClient, (void *)new_fd)) {
+				cout<<"Thread creating failed"<<endl;
+			}
+		}
 	}
+	cout<<"exiting"<<endl;
 	return 0;
 }
