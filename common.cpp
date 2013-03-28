@@ -47,6 +47,11 @@ bool
 BlockMap::setBlock(int blockNumber) {
 	if (blockNumber < numBlocks) {
 		blocks[blockNumber] = true;
+		if (currentBlock == blockNumber) {
+			while (currentBlock < numBlocks && blocks[currentBlock] == true) {
+				currentBlock++;
+			}
+		}
 	} else {
 		abort();
 	}
@@ -117,6 +122,7 @@ void BlockMap::print() {
 		else
 			cout<<"Block "<<i<<": False"<<endl;
 	}
+	cout<<endl;
 }
 
 File::File() {
@@ -212,6 +218,7 @@ File::deserialize(char *data, const int& size) {
 void File::print() {
 	cout<<"URL: "<<url<<endl;
 	blockInfo.print();
+	cout<<endl;
 }
 
 Client::Client() {
@@ -350,7 +357,7 @@ Client::deserialize(const char *data, const int& size) {
 
 	memcpy((char *)&num_files, data + offset, sizeof(int));
 	offset += sizeof(int);
-
+	files.clear();
 	for (int i = 0; i < num_files; i++) {
 		File f;
 		memcpy((char *)&file_size, data + offset, sizeof(int));
@@ -375,6 +382,7 @@ void Client::print() {
 		cout<<"File "<<i<<endl;
 		files[i].print();
 	}
+	cout<<endl;
 }
 
 void Client::addFile(File f) {
