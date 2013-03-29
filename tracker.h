@@ -12,5 +12,7 @@ class Tracker {
 		bool update(Client& clnt);
 		bool update(Client& clnt, const File& file);
 		BlockMap query(const File& file);
+		char *serialize(int& size);
+		void deserialize(const char *data, const int& size);
 		void print();
 };

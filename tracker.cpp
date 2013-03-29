@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <string.h>
 #include <errno.h>
+#include <map>
 
 #define MAX_THREADS	20
 int port = 7500, sockfd;
@@ -64,6 +65,42 @@ Tracker::update(Client& clnt, const File& file) {
 	clnt.updateFile(file_idx, file.getBlockInfo());
 }
 
+char *
+Tracker::serialize(int &size) {
+	map<char *, int>tmp_data;
+	size = sizeof(int);	//For number of clients
+	for (int i = 0; i < p2pnodes.size(); i++) {
+		int csize;
+		char *cdata = p2pnodes[i].serialize(csize);
+		cout<<"i = "<<i<<" csize = "<<csize<<endl;
+		tmp_data.insert(pair<char *, int>(cdata, csize));
+		size += sizeof(int) + csize; //size of serialized client and the actual data
+	}
+	char *data = new char[size];
+	int offset = 0;
+	int num_clients = p2pnodes.size();
+	memcpy(data + offset, (char *)&num_clients, sizeof(int));
+	offset += sizeof(int);
+	map<char *, int>::iterator it;
+	for (it = tmp_data.begin(); it != tmp_data.end(); it++) {
+		char *cdata = it->first;
+		int csize = it->second;
+		cout<<"csize = "<<csize<<endl;
+
+		memcpy(data + offset, (char *)&csize, sizeof(int));
+		offset += sizeof(int);
+
+		memcpy(data + offset, cdata, csize);
+		offset += csize;
+	}
+	return data;
+}
+
+void
+Tracker::deserialize(const char *data, const int& size) {
+	// Not required, I think
+}
+
 void
 Tracker::print() {
 	cout<<"Port: "<<port<<endl;
@@ -108,6 +145,25 @@ handleClient(void *clientsockfd) {
 				t.client_register(c);
 				t.print();
 				break;
+
+			case TRACKER_OP_QUERY:
+				char *tdata;
+				int tsize, bytes_sent;
+				char response_header[HEADER_SZ];
+
+				tdata = t.serialize(tsize);
+
+				// op is not required, but makes things more consistent.
+				memcpy(response_header, (char *)&op, sizeof(int));
+				memcpy(response_header + sizeof(int), (char *)&tsize, sizeof(int));
+				bytes_sent = send(clientfd, response_header, HEADER_SZ, 0);
+				assert(bytes_sent == HEADER_SZ);
+				bytes_sent = send(clientfd, tdata, tsize, 0);
+				assert(bytes_sent == tsize);
+				cout<<"Bytes sent = "<<bytes_sent<<endl;
+				free(tdata);	//Only client serialize uses malloc
+				break;
+
 
 			case TRACKER_OP_UPDATE:
 				/*
