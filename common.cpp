@@ -1,5 +1,5 @@
 #include "common.h"
-
+#define DEFAULT_BLK_SIZE	1000000
 /*
  * Get video length information from the URL somehow.
  */
@@ -352,35 +352,80 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
 		cout<<"Not found in cache. Fetch from source"<<endl;
-
+		
 		/* Replace this with fetch from youtube */
-		/*
-		FILE *fp = fopen(name.c_str(), "r");
-		fseek(fp, start, 0);
-		resp_size = fread(filedata, 1, req_size, fp);
-		*/
+		int filesize = readFile(name.c_str());
+		int blocksize = DEFAULT_BLK_SIZE;
+		int num_blocks = filesize / blocksize;
+		if (filesize % blocksize != 0) {
+			num_blocks++;
+		}
+		vector<bool>bmap;
+		bmap.assign(num_blocks, false);
+		map<string, string>::iterator it;
+		int folder_id = 1;
+		for (it = url_to_folder.begin(); it != url_to_folder.end(); it++) {
+			const char *tmp = (it->second).c_str();
+			const char *foldername = strrchr(tmp, '/') + 1;
+			cout<<"foldername: "<<foldername<<endl;
+			int max_id = atoi(foldername);
+			if (folder_id <= max_id) {
+				folder_id = max_id + 1;
+			}
+		}
+		cout<<"FOlder id = "<<folder_id<<endl;
+		char foldername[64];
+		sprintf(foldername, "%s/%d", directory.c_str(), folder_id);
+		cout<<"foldername = "<<foldername<<endl; 
+		if (mkdir(foldername ,S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH) != 0) {
+			cout<<"mkdir failed with error: "<<strerror(errno)<<endl;
+			exit(1);
+		}
+		string filename = foldername;
+		filename += "/metadata";
+		FILE *metadata = fopen(filename.c_str(), "w");
+		if (!metadata) {
+			cout<<"metadata creation failed!"<<endl;
+			exit(1);
+		}
+		fprintf(metadata, "url: %s\n", name.c_str());
+		fprintf(metadata, "filetype: mp4\n");
+		fprintf(metadata, "filesize: %d\n", filesize);
+		fprintf(metadata, "blocksize: %d\n", blocksize);
+		fclose(metadata);
+		url_to_folder.insert(pair<string, string>(name, foldername));
+		File f(name, bmap, filesize, blocksize);
+		files.push_back(f);
+		i = getFileIdxByURL(name);
+	}
+	if (i == -1) {
+		cout<<"SHould have found file!"<<endl;
+		exit(1);
+	}
+	File f = files[i];
+	int filesize, blocksize;
+	f.getSizeInfo(filesize, blocksize);
+	cout<<"Blocksize according to file = "<<blocksize<<endl;
+	fsize = filesize;
+	int blocknum = start / blocksize;
+	BlockMap b = f.getBlockInfo();
+	int blockOffset = start - blocknum * blocksize;
+	string folder = url_to_folder[name];
+	char tmp[10];
+	sprintf(tmp, "%d", blocknum);
+	string blockname = folder + "/" + tmp;
+	char *resp_data = new char[blocksize];
+	if (b.hasBlock(blocknum)) {
+		cout<<"Servicing "<<blocknum<<" from cache"<<endl;
+		FILE *fp = fopen(blockname.c_str(), "r");
+		fseek(fp, blockOffset, 0);
+		resp_size = fread(resp_data, 1, blocksize, fp);
+		fclose(fp);
+		return resp_data;
 	} else {
-		File f = files[i];
-		int filesize, blocksize;
-		f.getSizeInfo(filesize, blocksize);
-		cout<<"Blocksize according to file = "<<blocksize<<endl;
-		fsize = filesize;
-		int blocknum = start / blocksize;
-		BlockMap b = f.getBlockInfo();
-		int blockOffset = start - blocknum * blocksize;
-		string folder = url_to_folder[name];
-		char tmp[10];
-		sprintf(tmp, "%d", blocknum);
-		string blockname = folder + "/" + tmp;
-		char *resp_data = new char[blocksize];
-		if (b.hasBlock(blocknum)) {
-			cout<<"Servicing "<<blocknum<<" from cache"<<endl;
-			FILE *fp = fopen(blockname.c_str(), "r");
-			fseek(fp, blockOffset, 0);
-			resp_size = fread(resp_data, 1, blocksize, fp);
-			fclose(fp);
-			return resp_data;
-		} else {
+		/* First check if a peer has the block */
+		int peer_id = peerWithBlock(name, blocknum);
+		if (peer_id == -1) {
 			FILE *source = fopen(name.c_str(), "r");
 			if (!source) {
 				cout<<"Could not fetch from source!"<<endl;
@@ -405,6 +450,64 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			resp_size = bsize - blockOffset;
 			memcpy(resp_data, block_data + blockOffset, resp_size);
 			return resp_data;
+		} else {
+			Client peer = peers[peer_id];
+			string peer_ip_address = peer.getIP();
+			int port = peer.getPort();
+			int peerfd = connectToHost(peer_ip_address, port);
+
+			char header[HEADER_SZ];
+			int op = CLIENT_REQ_DATA;
+			int req_size = sizeof(int) +	//blocknumber
+							sizeof(int) + name.length(); //URL info
+			memcpy(header, (char *)&op, sizeof(int));
+			memcpy(header + sizeof(int), (char *)&req_size, sizeof(int));
+			int bytes_sent = send(peerfd, header, HEADER_SZ, 0);
+			assert(bytes_sent == HEADER_SZ);
+			char *data = new char[req_size];
+			int offset = 0;
+			memcpy(data + offset, (char *)&blocknum, sizeof(int));
+			offset += sizeof(int);
+
+			int url_len = name.length();
+			memcpy(data + offset, (char *)&url_len, sizeof(int));
+			offset += sizeof(int);
+
+			memcpy(data + offset, name.c_str(), sizeof(int));
+			offset += url_len;
+
+			bytes_sent = send(peerfd, data, req_size, 0);
+			assert(bytes_sent == req_size);
+			cout<<"Bytes sent = "<<bytes_sent<<endl;
+			free(data);	//Only client serialize uses malloc
+
+			char response_header[HEADER_SZ];
+			int bytes_rcvd = recv(peerfd, header, HEADER_SZ, 0); 
+			assert(bytes_rcvd == HEADER_SZ);
+
+			int num_bytes;
+			//WE dont care about op field in response
+			memcpy((char *)&num_bytes, header + sizeof(int), sizeof(int));
+			cout<<"About to receive "<<num_bytes<<" from peer"<<endl;
+			char *recv_data = new char[num_bytes];
+
+			bytes_rcvd = recv(peerfd, recv_data, num_bytes, 0);
+			assert(bytes_rcvd == num_bytes);
+			close(peerfd);
+
+			FILE *blockfile = fopen(blockname.c_str(), "w");
+			if (!blockfile) {
+				cout<<"Could not create block "<<blocknum<<" on disk!"<<endl;
+				exit(1);
+			}
+			fwrite(recv_data, 1, num_bytes, blockfile);
+			fclose(blockfile);
+			b.setBlock(blocknum);
+			files[i].updateBlockInfo(b);
+			resp_size = num_bytes - blockOffset;
+			memcpy(resp_data, recv_data + blockOffset, resp_size);
+			delete[] recv_data;
+			return resp_data;
 		}
 	}
 }
@@ -412,6 +515,11 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 string
 Client::getIP() const {
 	return ip_address;
+}
+
+int
+Client::getPort() const {
+	return port;
 }
 
 int
@@ -565,6 +673,153 @@ void Client::addFile(File f) {
 	files.push_back(f);
 }
 
+void
+Client::setTrackerFd(int sockfd) {
+	trackerfd = sockfd;
+}
+
+void
+Client::connectToTracker(string tracker_ip, int port) {
+	/*
+	struct addrinfo hints, *res;
+	int sockfd;
+	char portstr[8];
+	sprintf(portstr, "%d", port);
+
+	// first, load up address structs with getaddrinfo():
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	getaddrinfo(tracker_ip.c_str(), (const char *)portstr, &hints, &res);
+
+	// make a socket:
+
+	sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (sockfd == -1) {
+		cout<<"Could not create socket!"<<endl;
+		exit(1);
+		abort();
+	}
+	// connect!
+
+	if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
+		cout<<"Could not connect to tracker\n"<<endl;
+		exit(1);
+		abort();
+	}
+	*/
+	trackerfd = connectToHost(tracker_ip, port);
+}
+
+void
+Client::registerWithTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_REGISTER;
+	char *data;
+	int size;
+	int sockfd = trackerfd;
+
+	data = serialize(size);
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+	bytes_sent = send(sockfd, data, size, 0);
+	assert(bytes_sent == size);
+	cout<<"Bytes sent = "<<bytes_sent<<endl;
+	free(data);	//Only client serialize uses malloc
+}
+
+void
+Client::updateOnTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_UPDATE;
+	char *data;
+	int size;
+	int sockfd = trackerfd;
+
+	data = serialize(size);
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+	bytes_sent = send(sockfd, data, size, 0);
+	assert(bytes_sent == size);
+	cout<<"Bytes sent = "<<bytes_sent<<endl;
+	free(data);	//Only client serialize uses malloc
+}
+
+void
+Client::queryTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_QUERY;
+	char *data;
+	int size = 1;	//packet size doesnt matter for query
+	int sockfd = trackerfd;
+
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+
+	//Now, receive info from tracker
+
+	int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0); 
+	assert(bytes_rcvd == HEADER_SZ);
+
+	//Ignore op field in response and take the packet size
+	memcpy((char *)&size, header + sizeof(int), sizeof(int));
+	data = new char[size];
+	bytes_rcvd = recv(sockfd, data, size, 0);
+	assert(bytes_rcvd == size);
+	cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
+
+	int num_clients, offset = 0;
+	memcpy((char *)&num_clients, data + offset, sizeof(int));
+	offset += sizeof(int);
+
+	peers.clear();
+	for (int i = 0; i < num_clients; i++) {
+		int csize;
+		memcpy((char *)&csize, data + offset, sizeof(int));
+		offset += sizeof(int);
+		Client c;
+		c.deserialize(data + offset, csize);
+		offset += csize;
+		c.print();
+		if (c.getIP() == ip_address && c.getPort() == port) {
+			cout<<"Self - ignore."<<endl;
+		} else {
+			peers.push_back(c);
+		}
+	}
+	delete[] data;
+}
+
+bool
+Client::hasFileBlock(const int& file_idx, const int& blocknum) {
+	BlockMap b = files[file_idx].getBlockInfo();
+	return b.hasBlock(blocknum);
+}
+
+int
+Client::peerWithBlock(const string& name, const int& blocknum) {
+	int i;
+	int file_idx;
+
+	for (i = 0; i < peers.size(); i++) {
+		if ((file_idx = peers[i].getFileIdxByURL(name)) == -1) {
+			continue;
+		}
+		if (peers[i].hasFileBlock(file_idx, blocknum)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 int
 bindToPort(const string& ip, const int& port) {
 	int sockfd;
@@ -594,22 +849,67 @@ bindToPort(const string& ip, const int& port) {
 	}
 }
 
+int
+connectToHost(const string& ip, const int& port) {
+	struct addrinfo hints, *res;
+	int sockfd;
+	char portstr[8];
+	sprintf(portstr, "%d", port);
+
+	// first, load up address structs with getaddrinfo():
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	getaddrinfo(ip.c_str(), (const char *)portstr, &hints, &res);
+
+	// make a socket:
+
+	sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (sockfd == -1) {
+		cout<<"Could not create socket!"<<endl;
+		exit(1);
+		abort();
+	}
+	// connect!
+
+	if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
+		cout<<"Could not connect to tracker\n"<<endl;
+		exit(1);
+		abort();
+	}
+	return sockfd;
+}
+
 void
 getRangeOffset(char *header, int& start, int& end) {
+	char *buffer;
 	char *range = strstr(header, "Range: bytes=");
-	cout<<range<<endl;
+	//cout<<"range = "<<range<<endl;
 	range += strlen("Range: bytes=");
-	char *tmp = strtok(range, "-");
-	cout<<tmp<<endl;
+	char *tmp = strtok_r(range, "-", &buffer);
+	//cout<<tmp<<endl;
 	start = atoi(tmp);
 	cout<<start<<endl;
 }
 
 // return file size in bytes
-long
-readFile(char *name) {
+int
+readFile(const char *name) {
 	struct stat st;
 	stat(name, &st);
 	cout<<"File size = "<<st.st_size<<endl;
 	return st.st_size;
+}
+
+char *
+getFileName(char *header) {
+	char *buffer;
+	char *name = strstr(header, "GET /");
+	//cout<<name<<endl;
+	name += strlen("GET /");
+	char *tmp = strtok_r(name, " ", &buffer);
+	cout<<tmp<<endl;
+	return tmp;
 }
