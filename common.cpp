@@ -146,14 +146,28 @@ File::File(string url, vector<bool> blocks) {
 	blockInfo = tmp;
 }
 
+File::File(string url, vector<bool> blocks, int filesize, int blocksize) {
+	this->url = url;
+	BlockMap tmp(blocks);
+	blockInfo = tmp;
+	this->filesize = filesize;
+	this->blocksize = blocksize;
+}
+
 string
 File::getURL() const {
 	return url;
 }
 
-const BlockMap&
+BlockMap
 File::getBlockInfo() const {
 	return blockInfo;
+}
+
+void
+File::getSizeInfo(int& fsize, int& bsize) {
+	fsize = filesize;
+	bsize = blocksize;
 }
 
 void
@@ -169,11 +183,12 @@ File::serialize(int &size) const {
 	char *blockdata = blockInfo.serialize(block_data_size);
 	int url_size = url.length();
 	/*
-	 * Int to store size of the string, followed by actual string
+	 * Int to store size of the string, followed by actual string,
+	 * then filesize and blocksize
 	 * and then the size of the BlockMap data followed by the
 	 * BlockMap data.
 	 */
-	size = sizeof(int) + url_size + sizeof(int) + block_data_size;
+	size = sizeof(int) + url_size + 3 * sizeof(int) + block_data_size;
 
 	data = new char[size];
 	memcpy(data, (char *)&url_size, sizeof(int));
@@ -182,6 +197,12 @@ File::serialize(int &size) const {
 	const char *tmp = url.c_str();
 	memcpy(data + offset, tmp, url_size);
 	offset += url_size;
+
+	memcpy(data + offset, (char *)&filesize, sizeof(int));
+	offset += sizeof(int);
+
+	memcpy(data + offset, (char *)&blocksize, sizeof(int));
+	offset += sizeof(int);
 
 	memcpy(data + offset, (char *)&block_data_size, sizeof(int));
 	offset += sizeof(int);
@@ -209,6 +230,12 @@ File::deserialize(char *data, const int& size) {
 	url = tmp;
 	delete[] tmp;
 
+	memcpy((char *)&filesize, data + offset, sizeof(int));
+	offset += sizeof(int);
+
+	memcpy((char *)&blocksize, data + offset, sizeof(int));
+	offset += sizeof(int);
+	
 	memcpy((char *)&block_data_size, data + offset, sizeof(int));
 	offset += sizeof(int);
 

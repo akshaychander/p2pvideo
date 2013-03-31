@@ -69,6 +69,8 @@ class BlockMap {
 class File {
 	string url;
 	BlockMap blockInfo;
+	int filesize;
+	int blocksize;
 
 	public:
 		File();
@@ -79,9 +81,13 @@ class File {
 
 		File(string url, vector<bool> blocks);
 
+		File(string url, vector<bool> blocks, int filesize, int blocksize);
+
 		string getURL() const;
 
-		const BlockMap& getBlockInfo() const;
+		BlockMap getBlockInfo() const;
+
+		void getSizeInfo(int& fsize, int& bsize);
 
 		void updateBlockInfo(const BlockMap& b);
 
