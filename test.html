@@ -1,8 +1,43 @@
 <html>
-<body>
-
-<video src="http://127.0.0.1:10000" controls="controls"
-autoplay="autoplay" height="360" width="640"></video>
-
+<head>
+	<script type="text/javascript">
+		var URL;
+		function fetchURL()
+		{
+			URL = document.getElementById("url").value;
+			var x = getParameterByName("v");
+			document.getElementById("video").src = "http://127.0.0.1:10000/" + x;
+			//document.getElementById("video").play();
+		}
+		function getParameterByName(name)
+		{
+		  name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
+		  var regexS = "[\\?&]" + name + "=([^&#]*)";
+		  var regex = new RegExp(regexS);
+		  var results = regex.exec(URL);
+		  if(results == null)
+		    return "";
+		  else
+		  {
+		    return decodeURIComponent(results[1].replace(/\+/g, " "));
+		  }
+		}
+	</script>
+</head>
+<body style="background-color: #f2f2f2;">
+	<div style="width: 50%; margin: 0px auto;">
+		<br>
+		<div style="width: 50%; margin: 0px auto;">
+			<h1>P2P Video Streaming</h1>
+			<h4>Akshay, Chaitali, Devadas, Gayathri, Sundar</h4>
+		</div>
+		<br>
+		Please enter the URL:
+		<input type="text" id="url" />
+		<button type="button" onClick="fetchURL()">GO!</button>
+		<br>
+		<br>
+		<video src="" controls="controls" autoplay="autoplay" height="360" id="video" width="640"></video>
+	</div>
 </body>
 </html>
