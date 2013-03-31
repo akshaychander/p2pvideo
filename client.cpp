@@ -1,5 +1,18 @@
 #include "common.h"
 #include "assert.h"
+#include <errno.h>
+#include <pthread.h>
+#define MAX_CLIENT_THREADS 7
+
+int clients_port = 7501;  	// Each client listens on this port for incoming connections from other clients
+int clients_sockfd;		// Client socket fd
+
+
+// Function to transfer the file between peers
+void * fileTransfer(void *clientsockfd)
+{
+}
+
 
 // Returns socketfd on success
 int connectToTracker(string tracker_ip, int port) {
@@ -170,6 +183,39 @@ int main(int argc, char **argv) {
 	tclient.updateFile(file_idx, tmap);
 	updateOnTracker(sockfd, tclient);
 	queryTracker(sockfd, tclient);
+
+	string _ip = "127.0.0.1";
+        clients_sockfd = bindToPort(_ip, clients_port);
+	if(clients_sockfd == -1)
+	{
+		cout << "Could not create a socket for incoming client connections" << endl;
+		abort();
+		exit(1);
+	}
+	pthread_t client_threads[MAX_CLIENT_THREADS];
+	int thread_id = 0;
+	while(listen(clients_sockfd, BACKLOG) == 0)
+	{
+		struct sockaddr_storage incoming;
+                socklen_t incoming_sz = sizeof(incoming);
+                long new_fd = accept(sockfd, (struct sockaddr *)&incoming, &incoming_sz);
+                if (new_fd == -1) 
+		{
+                        cout<<"accept failed with error: "<<strerror(errno)<<endl;
+                }
+		else
+		{
+                        if(pthread_create(&client_threads[thread_id], NULL, fileTransfer, (void *)new_fd)) 
+			{
+                                cout<<"Thread creating failed"<<endl;
+                        }
+			else
+			{
+				thread_id++;
+			}
+                }
+	}
+
 	while(1);
 	return 0;
 }

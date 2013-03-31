@@ -9,6 +9,12 @@
 int port = 7500, sockfd;
 Tracker t(port);
 
+/* Mutexes initilized */
+static pthread_mutex_t _mutex1 = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t _mutex2 = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t _mutex3 = PTHREAD_MUTEX_INITIALIZER;
+
+
 Tracker::Tracker(int port) {
 	this->port = port;
 }
@@ -110,6 +116,7 @@ Tracker::print() {
 		cout<<endl;
 	}
 }
+
 void *
 handleClient(void *clientsockfd) {
 	long clientfd = (long)clientsockfd;
@@ -142,8 +149,12 @@ handleClient(void *clientsockfd) {
 				cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
 				c.deserialize(data, packet_size);
 				c.print();
+
+				pthread_mutex_lock(&_mutex1);
 				t.client_register(c);
 				t.print();
+				pthread_mutex_unlock(&_mutex1);
+
 				break;
 
 			case TRACKER_OP_QUERY:
@@ -151,7 +162,9 @@ handleClient(void *clientsockfd) {
 				int tsize, bytes_sent;
 				char response_header[HEADER_SZ];
 
+				pthread_mutex_lock(&_mutex2);
 				tdata = t.serialize(tsize);
+				pthread_mutex_unlock(&_mutex2);
 
 				// op is not required, but makes things more consistent.
 				memcpy(response_header, (char *)&op, sizeof(int));
@@ -194,8 +207,11 @@ handleClient(void *clientsockfd) {
 				cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
 				c.deserialize(data, packet_size);
 				c.print();
-				t.update(c);
-				t.print();
+
+				pthread_mutex_lock(&_mutex3);
+				  t.update(c);
+				  t.print();
+				pthread_mutex_unlock(&_mutex3);
 				break;
 		}
 	}
@@ -221,6 +237,10 @@ int main() {
 		} else {
 			if( pthread_create(&threads[thread_id], NULL, handleClient, (void *)new_fd)) {
 				cout<<"Thread creating failed"<<endl;
+			}
+			else
+			{
+				thread_id++;
 			}
 		}
 	}
