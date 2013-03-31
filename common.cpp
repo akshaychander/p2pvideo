@@ -1,5 +1,5 @@
 #include "common.h"
-
+#define DEFAULT_BLK_SIZE	1000000
 /*
  * Get video length information from the URL somehow.
  */
@@ -352,60 +352,101 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
 		cout<<"Not found in cache. Fetch from source"<<endl;
-
+		
 		/* Replace this with fetch from youtube */
-		/*
-		FILE *fp = fopen(name.c_str(), "r");
-		fseek(fp, start, 0);
-		resp_size = fread(filedata, 1, req_size, fp);
-		*/
-	} else {
-		File f = files[i];
-		int filesize, blocksize;
-		f.getSizeInfo(filesize, blocksize);
-		cout<<"Blocksize according to file = "<<blocksize<<endl;
-		fsize = filesize;
-		int blocknum = start / blocksize;
-		BlockMap b = f.getBlockInfo();
-		int blockOffset = start - blocknum * blocksize;
-		string folder = url_to_folder[name];
-		char tmp[10];
-		sprintf(tmp, "%d", blocknum);
-		string blockname = folder + "/" + tmp;
-		char *resp_data = new char[blocksize];
-		if (b.hasBlock(blocknum)) {
-			cout<<"Servicing "<<blocknum<<" from cache"<<endl;
-			FILE *fp = fopen(blockname.c_str(), "r");
-			fseek(fp, blockOffset, 0);
-			resp_size = fread(resp_data, 1, blocksize, fp);
-			fclose(fp);
-			return resp_data;
-		} else {
-			FILE *source = fopen(name.c_str(), "r");
-			if (!source) {
-				cout<<"Could not fetch from source!"<<endl;
-				exit(1);
-			}
-			int range_offset = blocknum * blocksize;
-			if (range_offset > 0) {
-				fseek(source, range_offset, 0);
-			}
-			char block_data[blocksize];
-			int bsize = fread(block_data, 1, blocksize, source);
-			fclose(source);
-			FILE *blockfile = fopen(blockname.c_str(), "w");
-			if (!blockfile) {
-				cout<<"Could not create block "<<blocknum<<" on disk!"<<endl;
-				exit(1);
-			}
-			fwrite(block_data, 1, bsize, blockfile);
-			fclose(blockfile);
-			b.setBlock(blocknum);
-			files[i].updateBlockInfo(b);
-			resp_size = bsize - blockOffset;
-			memcpy(resp_data, block_data + blockOffset, resp_size);
-			return resp_data;
+		int filesize = readFile(name.c_str());
+		int blocksize = DEFAULT_BLK_SIZE;
+		int num_blocks = filesize / blocksize;
+		if (filesize % blocksize != 0) {
+			num_blocks++;
 		}
+		vector<bool>bmap;
+		bmap.assign(num_blocks, false);
+		map<string, string>::iterator it;
+		int folder_id = 1;
+		for (it = url_to_folder.begin(); it != url_to_folder.end(); it++) {
+			const char *tmp = (it->second).c_str();
+			const char *foldername = strrchr(tmp, '/') + 1;
+			cout<<"foldername: "<<foldername<<endl;
+			int max_id = atoi(foldername);
+			if (folder_id <= max_id) {
+				folder_id = max_id + 1;
+			}
+		}
+		cout<<"FOlder id = "<<folder_id<<endl;
+		char foldername[64];
+		sprintf(foldername, "%s/%d", directory.c_str(), folder_id);
+		cout<<"foldername = "<<foldername<<endl; 
+		if (mkdir(foldername ,S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH) != 0) {
+			cout<<"mkdir failed with error: "<<strerror(errno)<<endl;
+			exit(1);
+		}
+		string filename = foldername;
+		filename += "/metadata";
+		FILE *metadata = fopen(filename.c_str(), "w");
+		if (!metadata) {
+			cout<<"metadata creation failed!"<<endl;
+			exit(1);
+		}
+		fprintf(metadata, "url: %s\n", name.c_str());
+		fprintf(metadata, "filetype: mp4\n");
+		fprintf(metadata, "filesize: %d\n", filesize);
+		fprintf(metadata, "blocksize: %d\n", blocksize);
+		fclose(metadata);
+		url_to_folder.insert(pair<string, string>(name, foldername));
+		File f(name, bmap, filesize, blocksize);
+		files.push_back(f);
+		i = getFileIdxByURL(name);
+	}
+	if (i == -1) {
+		cout<<"SHould have found file!"<<endl;
+		exit(1);
+	}
+	File f = files[i];
+	int filesize, blocksize;
+	f.getSizeInfo(filesize, blocksize);
+	cout<<"Blocksize according to file = "<<blocksize<<endl;
+	fsize = filesize;
+	int blocknum = start / blocksize;
+	BlockMap b = f.getBlockInfo();
+	int blockOffset = start - blocknum * blocksize;
+	string folder = url_to_folder[name];
+	char tmp[10];
+	sprintf(tmp, "%d", blocknum);
+	string blockname = folder + "/" + tmp;
+	char *resp_data = new char[blocksize];
+	if (b.hasBlock(blocknum)) {
+		cout<<"Servicing "<<blocknum<<" from cache"<<endl;
+		FILE *fp = fopen(blockname.c_str(), "r");
+		fseek(fp, blockOffset, 0);
+		resp_size = fread(resp_data, 1, blocksize, fp);
+		fclose(fp);
+		return resp_data;
+	} else {
+		FILE *source = fopen(name.c_str(), "r");
+		if (!source) {
+			cout<<"Could not fetch from source!"<<endl;
+			exit(1);
+		}
+		int range_offset = blocknum * blocksize;
+		if (range_offset > 0) {
+			fseek(source, range_offset, 0);
+		}
+		char block_data[blocksize];
+		int bsize = fread(block_data, 1, blocksize, source);
+		fclose(source);
+		FILE *blockfile = fopen(blockname.c_str(), "w");
+		if (!blockfile) {
+			cout<<"Could not create block "<<blocknum<<" on disk!"<<endl;
+			exit(1);
+		}
+		fwrite(block_data, 1, bsize, blockfile);
+		fclose(blockfile);
+		b.setBlock(blocknum);
+		files[i].updateBlockInfo(b);
+		resp_size = bsize - blockOffset;
+		memcpy(resp_data, block_data + blockOffset, resp_size);
+		return resp_data;
 	}
 }
 
@@ -596,20 +637,32 @@ bindToPort(const string& ip, const int& port) {
 
 void
 getRangeOffset(char *header, int& start, int& end) {
+	char *buffer;
 	char *range = strstr(header, "Range: bytes=");
-	cout<<range<<endl;
+	//cout<<"range = "<<range<<endl;
 	range += strlen("Range: bytes=");
-	char *tmp = strtok(range, "-");
-	cout<<tmp<<endl;
+	char *tmp = strtok_r(range, "-", &buffer);
+	//cout<<tmp<<endl;
 	start = atoi(tmp);
 	cout<<start<<endl;
 }
 
 // return file size in bytes
-long
-readFile(char *name) {
+int
+readFile(const char *name) {
 	struct stat st;
 	stat(name, &st);
 	cout<<"File size = "<<st.st_size<<endl;
 	return st.st_size;
+}
+
+char *
+getFileName(char *header) {
+	char *buffer;
+	char *name = strstr(header, "GET /");
+	//cout<<name<<endl;
+	name += strlen("GET /");
+	char *tmp = strtok_r(name, " ", &buffer);
+	cout<<tmp<<endl;
+	return tmp;
 }

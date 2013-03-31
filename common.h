@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <errno.h>
 
 using namespace std;
 
@@ -139,4 +140,5 @@ class Client {
 /* Bind to given port and return socket fd */
 int bindToPort(const string& ip, const int& port);
 void getRangeOffset(char *header, int& start, int& end);
-long readFile(char *name);
+int readFile(const char *name);
+char *getFileName(char *header);

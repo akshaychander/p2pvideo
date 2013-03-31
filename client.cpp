@@ -164,9 +164,10 @@ handleStreaming(void *param) {
 						cout<<"header:\n"<<header<<endl;
 						int start, end;
 						getRangeOffset(header, start, end);
+						char *requrl = getFileName(header);
 						range_offset = start;
 						int num_bytes;
-						char *filedata = c.getBlock("pudhu.mp4", range_offset, 0, num_bytes, filesize);
+						char *filedata = c.getBlock(requrl, range_offset, 0, num_bytes, filesize);
 						cout<<"block size = "<<num_bytes<<endl;
 						char response[1024];
 						int end_range = range_offset + num_bytes - 1;
