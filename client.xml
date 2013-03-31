@@ -1,0 +1,11 @@
+<client>
+       <tracker>
+               <ip>127.0.0.1</ip>
+               <port>7500</port>
+       </tracker>
+       <ip>127.0.0.1</ip>
+       <pport>7501</pport>
+       <sport>10000</sport>
+       <directory>/tmp</directory>
+       <blocksize>1000000</blocksize>
+</client>
