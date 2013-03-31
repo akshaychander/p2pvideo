@@ -1,8 +1,5 @@
 #include "common.h"
-#include "assert.h"
-#include <errno.h>
 #include <pthread.h>
-#include <errno.h>
 #include <iostream>
 #define MAX_CLIENT_THREADS 7
 
@@ -206,8 +203,10 @@ int main(int argc, char **argv) {
 	if (argc == 3) {
 		ip = argv[1];
 		port = atoi(argv[2]);
+		/*
 		ip += ":";
 		ip += argv[2];
+		*/
 		cout<<ip<<endl;
 	}
 

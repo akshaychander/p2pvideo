@@ -423,36 +423,103 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		fclose(fp);
 		return resp_data;
 	} else {
-		FILE *source = fopen(name.c_str(), "r");
-		if (!source) {
-			cout<<"Could not fetch from source!"<<endl;
-			exit(1);
+		/* First check if a peer has the block */
+		int peer_id = peerWithBlock(name, blocknum);
+		if (peer_id == -1) {
+			FILE *source = fopen(name.c_str(), "r");
+			if (!source) {
+				cout<<"Could not fetch from source!"<<endl;
+				exit(1);
+			}
+			int range_offset = blocknum * blocksize;
+			if (range_offset > 0) {
+				fseek(source, range_offset, 0);
+			}
+			char block_data[blocksize];
+			int bsize = fread(block_data, 1, blocksize, source);
+			fclose(source);
+			FILE *blockfile = fopen(blockname.c_str(), "w");
+			if (!blockfile) {
+				cout<<"Could not create block "<<blocknum<<" on disk!"<<endl;
+				exit(1);
+			}
+			fwrite(block_data, 1, bsize, blockfile);
+			fclose(blockfile);
+			b.setBlock(blocknum);
+			files[i].updateBlockInfo(b);
+			resp_size = bsize - blockOffset;
+			memcpy(resp_data, block_data + blockOffset, resp_size);
+			return resp_data;
+		} else {
+			Client peer = peers[peer_id];
+			string peer_ip_address = peer.getIP();
+			int port = peer.getPort();
+			int peerfd = connectToHost(peer_ip_address, port);
+
+			char header[HEADER_SZ];
+			int op = CLIENT_REQ_DATA;
+			int req_size = sizeof(int) +	//blocknumber
+							sizeof(int) + name.length(); //URL info
+			memcpy(header, (char *)&op, sizeof(int));
+			memcpy(header + sizeof(int), (char *)&req_size, sizeof(int));
+			int bytes_sent = send(peerfd, header, HEADER_SZ, 0);
+			assert(bytes_sent == HEADER_SZ);
+			char *data = new char[req_size];
+			int offset = 0;
+			memcpy(data + offset, (char *)&blocknum, sizeof(int));
+			offset += sizeof(int);
+
+			int url_len = name.length();
+			memcpy(data + offset, (char *)&url_len, sizeof(int));
+			offset += sizeof(int);
+
+			memcpy(data + offset, name.c_str(), sizeof(int));
+			offset += url_len;
+
+			bytes_sent = send(peerfd, data, req_size, 0);
+			assert(bytes_sent == req_size);
+			cout<<"Bytes sent = "<<bytes_sent<<endl;
+			free(data);	//Only client serialize uses malloc
+
+			char response_header[HEADER_SZ];
+			int bytes_rcvd = recv(peerfd, header, HEADER_SZ, 0); 
+			assert(bytes_rcvd == HEADER_SZ);
+
+			int num_bytes;
+			//WE dont care about op field in response
+			memcpy((char *)&num_bytes, header + sizeof(int), sizeof(int));
+			cout<<"About to receive "<<num_bytes<<" from peer"<<endl;
+			char *recv_data = new char[num_bytes];
+
+			bytes_rcvd = recv(peerfd, recv_data, num_bytes, 0);
+			assert(bytes_rcvd == num_bytes);
+			close(peerfd);
+
+			FILE *blockfile = fopen(blockname.c_str(), "w");
+			if (!blockfile) {
+				cout<<"Could not create block "<<blocknum<<" on disk!"<<endl;
+				exit(1);
+			}
+			fwrite(recv_data, 1, num_bytes, blockfile);
+			fclose(blockfile);
+			b.setBlock(blocknum);
+			files[i].updateBlockInfo(b);
+			resp_size = num_bytes - blockOffset;
+			memcpy(resp_data, recv_data + blockOffset, resp_size);
+			delete[] recv_data;
+			return resp_data;
 		}
-		int range_offset = blocknum * blocksize;
-		if (range_offset > 0) {
-			fseek(source, range_offset, 0);
-		}
-		char block_data[blocksize];
-		int bsize = fread(block_data, 1, blocksize, source);
-		fclose(source);
-		FILE *blockfile = fopen(blockname.c_str(), "w");
-		if (!blockfile) {
-			cout<<"Could not create block "<<blocknum<<" on disk!"<<endl;
-			exit(1);
-		}
-		fwrite(block_data, 1, bsize, blockfile);
-		fclose(blockfile);
-		b.setBlock(blocknum);
-		files[i].updateBlockInfo(b);
-		resp_size = bsize - blockOffset;
-		memcpy(resp_data, block_data + blockOffset, resp_size);
-		return resp_data;
 	}
 }
 
 string
 Client::getIP() const {
 	return ip_address;
+}
+
+int
+Client::getPort() const {
+	return port;
 }
 
 int
@@ -606,6 +673,153 @@ void Client::addFile(File f) {
 	files.push_back(f);
 }
 
+void
+Client::setTrackerFd(int sockfd) {
+	trackerfd = sockfd;
+}
+
+void
+Client::connectToTracker(string tracker_ip, int port) {
+	/*
+	struct addrinfo hints, *res;
+	int sockfd;
+	char portstr[8];
+	sprintf(portstr, "%d", port);
+
+	// first, load up address structs with getaddrinfo():
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	getaddrinfo(tracker_ip.c_str(), (const char *)portstr, &hints, &res);
+
+	// make a socket:
+
+	sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (sockfd == -1) {
+		cout<<"Could not create socket!"<<endl;
+		exit(1);
+		abort();
+	}
+	// connect!
+
+	if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
+		cout<<"Could not connect to tracker\n"<<endl;
+		exit(1);
+		abort();
+	}
+	*/
+	trackerfd = connectToHost(tracker_ip, port);
+}
+
+void
+Client::registerWithTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_REGISTER;
+	char *data;
+	int size;
+	int sockfd = trackerfd;
+
+	data = serialize(size);
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+	bytes_sent = send(sockfd, data, size, 0);
+	assert(bytes_sent == size);
+	cout<<"Bytes sent = "<<bytes_sent<<endl;
+	free(data);	//Only client serialize uses malloc
+}
+
+void
+Client::updateOnTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_UPDATE;
+	char *data;
+	int size;
+	int sockfd = trackerfd;
+
+	data = serialize(size);
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+	bytes_sent = send(sockfd, data, size, 0);
+	assert(bytes_sent == size);
+	cout<<"Bytes sent = "<<bytes_sent<<endl;
+	free(data);	//Only client serialize uses malloc
+}
+
+void
+Client::queryTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_QUERY;
+	char *data;
+	int size = 1;	//packet size doesnt matter for query
+	int sockfd = trackerfd;
+
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+
+	//Now, receive info from tracker
+
+	int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0); 
+	assert(bytes_rcvd == HEADER_SZ);
+
+	//Ignore op field in response and take the packet size
+	memcpy((char *)&size, header + sizeof(int), sizeof(int));
+	data = new char[size];
+	bytes_rcvd = recv(sockfd, data, size, 0);
+	assert(bytes_rcvd == size);
+	cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
+
+	int num_clients, offset = 0;
+	memcpy((char *)&num_clients, data + offset, sizeof(int));
+	offset += sizeof(int);
+
+	peers.clear();
+	for (int i = 0; i < num_clients; i++) {
+		int csize;
+		memcpy((char *)&csize, data + offset, sizeof(int));
+		offset += sizeof(int);
+		Client c;
+		c.deserialize(data + offset, csize);
+		offset += csize;
+		c.print();
+		if (c.getIP() == ip_address && c.getPort() == port) {
+			cout<<"Self - ignore."<<endl;
+		} else {
+			peers.push_back(c);
+		}
+	}
+	delete[] data;
+}
+
+bool
+Client::hasFileBlock(const int& file_idx, const int& blocknum) {
+	BlockMap b = files[file_idx].getBlockInfo();
+	return b.hasBlock(blocknum);
+}
+
+int
+Client::peerWithBlock(const string& name, const int& blocknum) {
+	int i;
+	int file_idx;
+
+	for (i = 0; i < peers.size(); i++) {
+		if ((file_idx = peers[i].getFileIdxByURL(name)) == -1) {
+			continue;
+		}
+		if (peers[i].hasFileBlock(file_idx, blocknum)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 int
 bindToPort(const string& ip, const int& port) {
 	int sockfd;
@@ -633,6 +847,39 @@ bindToPort(const string& ip, const int& port) {
 	} else {
 		return -1;
 	}
+}
+
+int
+connectToHost(const string& ip, const int& port) {
+	struct addrinfo hints, *res;
+	int sockfd;
+	char portstr[8];
+	sprintf(portstr, "%d", port);
+
+	// first, load up address structs with getaddrinfo():
+
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+
+	getaddrinfo(ip.c_str(), (const char *)portstr, &hints, &res);
+
+	// make a socket:
+
+	sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+	if (sockfd == -1) {
+		cout<<"Could not create socket!"<<endl;
+		exit(1);
+		abort();
+	}
+	// connect!
+
+	if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
+		cout<<"Could not connect to tracker\n"<<endl;
+		exit(1);
+		abort();
+	}
+	return sockfd;
 }
 
 void

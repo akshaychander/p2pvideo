@@ -17,6 +17,7 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <errno.h>
+#include "assert.h"
 
 using namespace std;
 
@@ -28,7 +29,8 @@ enum {
 	TRACKER_OP_REGISTER = 0,
 	TRACKER_OP_QUERY,
 	TRACKER_OP_UPDATE,
-	TRACKER_OP_KEEP_ALIVE
+	TRACKER_OP_KEEP_ALIVE,
+	CLIENT_REQ_DATA
 };
 
 /*
@@ -113,12 +115,17 @@ class Client {
 	vector<Client>	peers;
 	map<string, string> url_to_folder;
 
+	/* Stuff not need to serialize/deserialize */
+	int		trackerfd;
+
 	public:
 		Client();
 
 		Client(string ip, int port, string dir);
 
 		string getIP() const;
+
+		int getPort() const;
 
 		void initialize();
 
@@ -135,10 +142,25 @@ class Client {
 		void addFile(File f); //for debugging
 
 		char* getBlock(string name, int start, int req_size, int& resp_size, int& fsize);
+
+		void setTrackerFd(int sockfd);
+
+		void connectToTracker(string tracker_ip, int port);
+
+		void registerWithTracker();
+
+		void updateOnTracker();
+
+		void queryTracker();
+
+		bool hasFileBlock(const int& file_idx, const int& blocknum);
+
+		int peerWithBlock(const string& name, const int& blocknum);
 };
 
 /* Bind to given port and return socket fd */
 int bindToPort(const string& ip, const int& port);
+int connectToHost(const string& ip, const int& port);
 void getRangeOffset(char *header, int& start, int& end);
 int readFile(const char *name);
 char *getFileName(char *header);
