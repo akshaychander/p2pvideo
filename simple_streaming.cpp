@@ -73,11 +73,13 @@ map<string, string> url_to_folder;
 vector<File> filelist;
 
 char *
-getBlock(string name, int start, int req_size, int& resp_size) {
+getBlock(string name, int start, int req_size, int& resp_size, int& fsize) {
 	int i;
+	cout<<"name = "<<name<<endl;
 	for (i = 0; i < filelist.size(); i++) {
-		if (filelist[i].getURL() != name) {
-			continue;
+		cout<<filelist[i].getURL()<<endl;
+		if (filelist[i].getURL() == name) {
+			break;
 		}
 	}
 	if (i == filelist.size()) {
@@ -93,6 +95,8 @@ getBlock(string name, int start, int req_size, int& resp_size) {
 		File f = filelist[i];
 		int filesize, blocksize;
 		f.getSizeInfo(filesize, blocksize);
+		cout<<"Blocksize according to file = "<<blocksize<<endl;
+		fsize = filesize;
 		int blocknum = start / blocksize;
 		BlockMap b = f.getBlockInfo();
 		int blockOffset = start - blocknum * blocksize;
@@ -102,6 +106,7 @@ getBlock(string name, int start, int req_size, int& resp_size) {
 		string blockname = folder + "/" + tmp;
 		char *resp_data = new char[blocksize];
 		if (b.hasBlock(blocknum)) {
+			cout<<"Servicing "<<blocknum<<" from cache"<<endl;
 			FILE *fp = fopen(blockname.c_str(), "r");
 			fseek(fp, blockOffset, 0);
 			resp_size = fread(resp_data, 1, blocksize, fp);
@@ -109,8 +114,14 @@ getBlock(string name, int start, int req_size, int& resp_size) {
 			return resp_data;
 		} else {
 			FILE *source = fopen(name.c_str(), "r");
+			if (!source) {
+				cout<<"Could not fetch from source!"<<endl;
+				exit(1);
+			}
 			int range_offset = blocknum * blocksize;
-			fseek(source, range_offset, 0);
+			if (range_offset > 0) {
+				fseek(source, range_offset, 0);
+			}
 			char block_data[blocksize];
 			int bsize = fread(block_data, 1, blocksize, source);
 			fclose(source);
@@ -121,7 +132,9 @@ getBlock(string name, int start, int req_size, int& resp_size) {
 			}
 			fwrite(block_data, 1, bsize, blockfile);
 			fclose(blockfile);
-			resp_size = bsize - blockOffset + 1;
+			b.setBlock(blocknum);
+			f.updateBlockInfo(b);
+			resp_size = bsize - blockOffset;
 			memcpy(resp_data, block_data + blockOffset, resp_size);
 			return resp_data;
 		}
@@ -201,7 +214,7 @@ void initialize(string directory) {
 			}
 			cout<<blockname<<endl;
 			int blocknum = atoi(urlresult->d_name);
-			cout<<blocknum<<endl;
+			cout<<"Have block: "<<blocknum<<endl;
 			bmap[blocknum] = true;
 		}
 		closedir(urldir);
@@ -228,8 +241,8 @@ int main() {
 			char header[1024];
 			memset(header, 0, 1024);
 			int chunk_size = 1000000;
-			long filesize = readFile("test.mp4");
-			long roundoff = (filesize / chunk_size) * chunk_size;
+			int filesize = readFile("test.mp4");
+			int roundoff = (filesize / chunk_size) * chunk_size;
 			cout<<"roundoff = "<<roundoff<<endl;
 			int range_offset = 0;
 			FILE *fp = fopen("test.mp4", "r");
@@ -245,6 +258,32 @@ int main() {
 						int start, end;
 						getRangeOffset(header, start, end);
 						range_offset = start;
+						int num_bytes;
+						char *filedata = getBlock("pudhu.mp4", range_offset, 0, num_bytes, filesize);
+						cout<<"block size = "<<num_bytes<<endl;
+						char response[1024];
+						int end_range = range_offset + num_bytes - 1;
+						int header_bytes = sprintf(response, "HTTP/1.1 206 Partial Content\r\n"
+							"Content-Type: video/mp4\r\nContent-Range: bytes "
+							"%d-%d/%d\r\nTransfer-Encoding: chunked\r\n\r\n",
+							range_offset, end_range, filesize);
+						cout<<response<<endl;
+						cout<<"num bytes = "<<num_bytes<<endl;
+						cout<<"Bytes sent = "<<send(new_fd, response, header_bytes, 0)<<endl;
+
+						int size_bytes = sprintf(response, "%x\r\n", num_bytes);
+						cout<<response<<endl;
+						cout<<"size bytes = "<<size_bytes<<" num_bytes = "<<num_bytes<<endl;
+						send(new_fd, response, size_bytes, 0);
+						cout<<"File bytes sent = "<<send(new_fd, filedata, num_bytes, 0)<<endl;
+						size_bytes = sprintf(response, "\r\n0\r\n\r\n");
+						cout<<response<<endl;
+						send(new_fd, response, size_bytes, 0);
+						delete[] filedata;
+						offset = 0;
+						continue;
+
+						/*
 						fseek(fp, range_offset, 0);
 						char response[1024];
 						char filedata[chunk_size];
@@ -270,15 +309,8 @@ int main() {
 						}
 						offset = 0;
 						continue;
-						/*
-						%x\r\n",cnt);
-						sprintf(
-						while (range_offset < roundoff) {
-							fread
-						}
-						for (int i = 0;
 						*/
-						break;
+
 					}
 				} 
 				offset++;
