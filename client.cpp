@@ -2,10 +2,19 @@
 #include "assert.h"
 #include <errno.h>
 #include <pthread.h>
+#include <errno.h>
+#include <iostream>
 #define MAX_CLIENT_THREADS 7
 
 int clients_port = 7501;  	// Each client listens on this port for incoming connections from other clients
 int clients_sockfd;		// Client socket fd
+
+
+int streaming_port = 10000;
+
+string storage_directory;
+
+Client c;
 
 
 // Function to transfer the file between peers
@@ -122,6 +131,71 @@ void queryTracker(int sockfd, Client& clnt) {
 
 }
 
+void *
+handleStreaming(void *param) {
+	int sockfd = bindToPort("127.0.0.1", streaming_port);
+	char *cache = new char[100000000];
+	while (listen(sockfd, 10) == 0) {
+		/* listen and accept incoming connections */
+		struct sockaddr_storage incoming;
+		socklen_t incoming_sz = sizeof(incoming);
+		long new_fd = accept(sockfd, (struct sockaddr *)&incoming, &incoming_sz);
+		if (new_fd == -1) {
+			cout<<"accept failed with error: "<<strerror(errno)<<endl;
+			exit(1);
+		} else {
+			cout<<"got connection: "<<new_fd<<endl;
+			char header[1024];
+			memset(header, 0, 1024);
+			int chunk_size = 1000000;
+			int filesize = readFile("test.mp4");
+			int roundoff = (filesize / chunk_size) * chunk_size;
+			cout<<"roundoff = "<<roundoff<<endl;
+			int range_offset = 0;
+			FILE *fp = fopen("test.mp4", "r");
+			int offset = 0;
+			char crlf[5] = "\r\n\r\n";
+			while (1) {
+				int bytes_recv = recv(new_fd, header + offset, 1, 0);
+				//cout<<header[offset];
+				if (offset >= 3) {
+					if (memcmp(header + offset - 3, crlf, 4) == 0) {
+						cout<<"done!"<<endl;
+						cout<<"header:\n"<<header<<endl;
+						int start, end;
+						getRangeOffset(header, start, end);
+						range_offset = start;
+						int num_bytes;
+						char *filedata = c.getBlock("pudhu.mp4", range_offset, 0, num_bytes, filesize);
+						cout<<"block size = "<<num_bytes<<endl;
+						char response[1024];
+						int end_range = range_offset + num_bytes - 1;
+						int header_bytes = sprintf(response, "HTTP/1.1 206 Partial Content\r\n"
+							"Content-Type: video/mp4\r\nContent-Range: bytes "
+							"%d-%d/%d\r\nTransfer-Encoding: chunked\r\n\r\n",
+							range_offset, end_range, filesize);
+						cout<<response<<endl;
+						cout<<"num bytes = "<<num_bytes<<endl;
+						cout<<"Bytes sent = "<<send(new_fd, response, header_bytes, 0)<<endl;
+
+						int size_bytes = sprintf(response, "%x\r\n", num_bytes);
+						cout<<response<<endl;
+						cout<<"size bytes = "<<size_bytes<<" num_bytes = "<<num_bytes<<endl;
+						send(new_fd, response, size_bytes, 0);
+						cout<<"File bytes sent = "<<send(new_fd, filedata, num_bytes, 0)<<endl;
+						size_bytes = sprintf(response, "\r\n0\r\n\r\n");
+						cout<<response<<endl;
+						send(new_fd, response, size_bytes, 0);
+						delete[] filedata;
+						offset = 0;
+					}
+				} 
+				offset++;
+			}
+		}
+	}
+}
+
 int main(int argc, char **argv) {
 	string ip = "localhost";
 	int port = 5000;
@@ -135,6 +209,7 @@ int main(int argc, char **argv) {
 		ip += argv[2];
 		cout<<ip<<endl;
 	}
+
 	vector<bool> tmap;
 	int tnum = 5;
 	for (int i = 0; i < tnum; i++) {
@@ -169,23 +244,29 @@ int main(int argc, char **argv) {
 	char *data2 = tclient.serialize(size2);
 	//dclient.deserialize(data2, size2);
 	//dclient.print();
-	
+
+	storage_directory = "/home/deepthought/sandbox/p2pvideo/files";
+	Client tmpc(ip, port, storage_directory);
+	c = tmpc;
 	int sockfd = connectToTracker(tracker_ip, tracker_port);
 	if (sockfd != -1) {
 		cout<<"Connected to tracker"<<endl;
 	}
-	registerWithTracker(sockfd, tclient);
+	//registerWithTracker(sockfd, tclient);
 
 	for (int i = 0; i < tnum; i++) {
 		tmap[i] = true;
 	}
 	int file_idx = tclient.getFileIdxByURL(filename);
-	tclient.updateFile(file_idx, tmap);
-	updateOnTracker(sockfd, tclient);
-	queryTracker(sockfd, tclient);
+	//tclient.updateFile(file_idx, tmap);
+	//updateOnTracker(sockfd, tclient);
+	registerWithTracker(sockfd, c);
+	queryTracker(sockfd, c);
 
 	string _ip = "127.0.0.1";
-        clients_sockfd = bindToPort(_ip, clients_port);
+	pthread_t streamer;
+	pthread_create(&streamer, NULL, handleStreaming, NULL);
+	clients_sockfd = bindToPort(_ip, clients_port);
 	if(clients_sockfd == -1)
 	{
 		cout << "Could not create a socket for incoming client connections" << endl;
@@ -197,25 +278,25 @@ int main(int argc, char **argv) {
 	while(listen(clients_sockfd, BACKLOG) == 0)
 	{
 		struct sockaddr_storage incoming;
-                socklen_t incoming_sz = sizeof(incoming);
-                long new_fd = accept(sockfd, (struct sockaddr *)&incoming, &incoming_sz);
-                if (new_fd == -1) 
+		socklen_t incoming_sz = sizeof(incoming);
+		long new_fd = accept(clients_sockfd, (struct sockaddr *)&incoming, &incoming_sz);
+		if (new_fd == -1) 
 		{
-                        cout<<"accept failed with error: "<<strerror(errno)<<endl;
-                }
+			cout<<"peer accept failed with error: "<<strerror(errno)<<endl;
+			exit(1);
+		}
 		else
 		{
-                        if(pthread_create(&client_threads[thread_id], NULL, fileTransfer, (void *)new_fd)) 
+			if(pthread_create(&client_threads[thread_id], NULL, fileTransfer, (void *)new_fd)) 
 			{
-                                cout<<"Thread creating failed"<<endl;
-                        }
+				cout<<"Thread creating failed"<<endl;
+			}
 			else
 			{
 				thread_id++;
 			}
-                }
+		}
 	}
-
 	while(1);
 	return 0;
 }

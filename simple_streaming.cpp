@@ -17,7 +17,7 @@
 #include "common.h"
 
 using namespace std;
-
+int streaming_port = 10000;
 /* Todo: Handle SIGPIPE */
 /*
 int
@@ -227,7 +227,7 @@ void initialize(string directory) {
 int main() {
 	string directory = "/home/deepthought/sandbox/p2pvideo/files";
 	initialize(directory);
-	int sockfd = bindToPort("127.0.0.1", 10000);
+	int sockfd = bindToPort("127.0.0.1", streaming_port);
 	char *cache = new char[100000000];
 	while (listen(sockfd, 10) == 0) {
 		/* listen and accept incoming connections */

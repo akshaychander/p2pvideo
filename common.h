@@ -11,6 +11,11 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <sys/stat.h>
+#include <map>
+#include <stddef.h>
+#include <dirent.h>
+#include <unistd.h>
 
 using namespace std;
 
@@ -105,6 +110,7 @@ class Client {
 	string	directory;
 	vector<File>	files;
 	vector<Client>	peers;
+	map<string, string> url_to_folder;
 
 	public:
 		Client();
@@ -112,6 +118,8 @@ class Client {
 		Client(string ip, int port, string dir);
 
 		string getIP() const;
+
+		void initialize();
 
 		int getFileIdxByURL(const string& url) const;
 
@@ -124,7 +132,11 @@ class Client {
 		void print();
 
 		void addFile(File f); //for debugging
+
+		char* getBlock(string name, int start, int req_size, int& resp_size, int& fsize);
 };
 
 /* Bind to given port and return socket fd */
 int bindToPort(const string& ip, const int& port);
+void getRangeOffset(char *header, int& start, int& end);
+long readFile(char *name);
