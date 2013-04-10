@@ -172,7 +172,6 @@ void queryTracker(int sockfd, Client& clnt) {
 void *
 handleStreaming(void *param) {
 	int sockfd = bindToPort("127.0.0.1", streaming_port);
-	char *cache = new char[100000000];
 	while (listen(sockfd, 10) == 0) {
 		/* listen and accept incoming connections */
 		struct sockaddr_storage incoming;
@@ -317,10 +316,9 @@ int main(int argc, char **argv) {
 	c.registerWithTracker();
 	c.queryTracker();
 
-	string _ip = "127.0.0.1";
 	pthread_t streamer;
 	pthread_create(&streamer, NULL, handleStreaming, NULL);
-	clients_sockfd = bindToPort(_ip, clients_port);
+	clients_sockfd = bindToPort(ip, clients_port);
 	if(clients_sockfd == -1)
 	{
 		cout << "Could not create a socket for incoming client connections" << endl;

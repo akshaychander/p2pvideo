@@ -5,10 +5,19 @@
  */
 int getVideoLength(string url) {
 	char command[256];
+	int retries = 5;
+
 	sprintf(command, "./youtube_get_video_size.pl https://www.youtube.com/watch?v=%s", url.c_str());
-	FILE *fp = popen(command, "r");
+	FILE *fp = NULL;
+	while (retries > 0) {
+		fp = popen(command, "r");
+		if (!fp) {
+			cout<<"Could not get video size! Retrying."<<endl;
+			retries--;
+		}
+	}
 	if (!fp) {
-		cout<<"Could not get video size!"<<endl;
+		cout<<"Could not execute youtube_get_video_size.pl!"<<endl;
 		exit(1);
 	}
 	char buffer[20];
@@ -369,8 +378,6 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
 		cout<<"Not found in cache!"<<endl;
-		
-		/* Replace this with fetch from youtube */
 		int filesize = getVideoLength(name.c_str());
 		int blocksize = DEFAULT_BLK_SIZE;
 		int num_blocks = filesize / blocksize;
@@ -717,7 +724,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += tmp_num;
 	tmp[tmp_num] = '\0';
 	ip_address = tmp;
-	free(tmp);
+	delete[] tmp;
 
 	memcpy((char *)&tmp_num, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -735,7 +742,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += tmp_num;
 	tmp[tmp_num] = '\0';
 	directory = tmp;
-	free(tmp);
+	delete[] tmp;
 
 	memcpy((char *)&num_files, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -751,7 +758,7 @@ Client::deserialize(const char *data, const int& size) {
 
 		f.deserialize(file_data, file_size);
 		files.push_back(f);
-		free(file_data);
+		delete[] file_data;
 	}
 }
 

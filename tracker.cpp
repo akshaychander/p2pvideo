@@ -218,7 +218,7 @@ handleClient(void *clientsockfd) {
 }
 
 int main() {
-	string ip = "127.0.0.1";
+	string ip = "192.168.1.4";
 	sockfd = bindToPort(ip, port);
 	if (sockfd == -1) {
 		cout<<"Could not create socket or bind to port"<<endl;
