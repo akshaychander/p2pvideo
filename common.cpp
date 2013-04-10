@@ -3,8 +3,25 @@
 /*
  * Get video length information from the URL somehow.
  */
-int getNumBlocks(string url) {
-	return 0;
+int getVideoLength(string url) {
+	char command[256];
+	sprintf(command, "./youtube_get_video_size.pl https://www.youtube.com/watch?v=%s", url.c_str());
+	FILE *fp = popen(command, "r");
+	if (!fp) {
+		cout<<"Could not get video size!"<<endl;
+		exit(1);
+	}
+	char buffer[20];
+	while (!feof(fp)) {
+		if (fgets(buffer, 128, fp) == NULL) {
+			cout<<"Could not get output from script!"<<endl;
+			exit(1);
+		}
+		cout<<"video length is "<<buffer<<endl;
+		break;
+	}
+	pclose(fp);
+	return atoi(buffer);
 }
 
 BlockMap::BlockMap() {
@@ -130,7 +147,7 @@ File::File() {
 
 File::File(string url) {
 	this->url = url;
-	BlockMap tmp(getNumBlocks(url), false);
+	BlockMap tmp(getVideoLength(url), false);
 	blockInfo = tmp;
 }
 
@@ -354,7 +371,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		cout<<"Not found in cache!"<<endl;
 		
 		/* Replace this with fetch from youtube */
-		int filesize = readFile(name.c_str());
+		int filesize = getVideoLength(name.c_str());
 		int blocksize = DEFAULT_BLK_SIZE;
 		int num_blocks = filesize / blocksize;
 		if (filesize % blocksize != 0) {
@@ -389,7 +406,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			exit(1);
 		}
 		fprintf(metadata, "url: %s\n", name.c_str());
-		fprintf(metadata, "filetype: mp4\n");
+		fprintf(metadata, "filetype: webm\n");
 		fprintf(metadata, "filesize: %d\n", filesize);
 		fprintf(metadata, "blocksize: %d\n", blocksize);
 		fclose(metadata);
@@ -426,6 +443,44 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		/* First check if a peer has the block */
 		int peer_id = peerWithBlock(name, blocknum);
 		if (peer_id == -1) {
+			char command[256];
+			int startRange= blocknum * blocksize;
+			int endRange = (startRange + blocksize >= filesize) ? (filesize - 1) : (startRange + blocksize - 1);
+			sprintf(command, "./youtube_get_video.pl https://www.youtube.com/watch?v=%s %s %d %d", name.c_str(), blockname.c_str(), startRange, endRange);
+			cout<<"Command = "<<command<<endl;
+			/*
+			FILE *fp = popen(command, "r");
+			if (!fp) {
+				cout<<"Failed to execute script!"<<endl;
+				exit(1);
+			}
+			fclose(fp);
+			*/
+			int retries = 5;
+
+			FILE *fp = NULL;
+			while (retries > 0) {
+				system(command);
+				fp = fopen(blockname.c_str(), "r");
+				if (!fp) {
+					if (retries == 0) {
+						cout<<"Failed to get block from youtube!"<<endl;
+						exit(1);
+					}
+					retries--;
+					cout<<"Retrying!"<<endl;
+
+				} else {
+					break;
+				}
+			}
+			fseek(fp, blockOffset, 0);
+			resp_size = fread(resp_data, 1, blocksize, fp);
+			fclose(fp);
+			b.setBlock(blocknum);
+			files[i].updateBlockInfo(b);
+			return resp_data;
+			/*
 			FILE *source = fopen(name.c_str(), "r");
 			if (!source) {
 				cout<<"Could not fetch from source!"<<endl;
@@ -450,6 +505,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			resp_size = bsize - blockOffset;
 			memcpy(resp_data, block_data + blockOffset, resp_size);
 			return resp_data;
+			*/
 		} else {
 			cout<<"Peer "<<peer_id<<" has block."<<endl;
 			Client peer = peers[peer_id];

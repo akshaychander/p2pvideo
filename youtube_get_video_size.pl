@@ -4,16 +4,9 @@ use strict;
 use warnings;
 
 my $url = $ARGV[0] or die "\nError: You need to specify a YouTube URL\n\n";
-#my $blocknum = $ARGV[1] or die "\nError: You need to specify a block number\n\n";
-#my $start = $ARGV[2] or die "\nError: You need to specify a start offset\n\n";
-#my $end = $ARGV[3] or die "\nError: You need to specify an end offset\n\n";
 
-my $blockdest = $ARGV[1];
-print $blockdest;
-my $start = $ARGV[2];
-my $end = $ARGV[3];
  
-#my $prefix = defined($ARGV[1]) ? $ARGV[1] : "";
+my $prefix = defined($ARGV[1]) ? $ARGV[1] : "";
 
 
 my $html = `wget -Ncq -e "convert-links=off" --keep-session-cookies --save-cookies /dev/null --no-check-certificate "$url" -O-`  or die  "\nThere was a problem downloading the HTML file.\n\n";
@@ -47,7 +40,7 @@ my ($youtubeurl) = $download =~ /(http.+)/;
 $youtubeurl =~ s/&signature.+$//;
 
 
-$download = "$youtubeurl\&$signature\&range=$start-$end";
+$download = "$youtubeurl\&$signature";
 
 
 $download =~ s/&+/&/g;
@@ -57,15 +50,10 @@ $download =~ s/&itag=\d+&signature=/&signature=/g;
 
 #print "\n Download: $prefix$title.webm\n\n";
 
-print "\n URL: $download \n";
-#system("curl -I '$download' 2>/dev/null | egrep 'Content-Length' | awk '{print \$NF}'");
+#print "\n URL: $download \n";
 #system("wget -Ncq -e \"convert-links=off\" --load-cookies /dev/null --tries=50 --timeout=45 --no-check-certificate \"$download\" -O $prefix$title.webm &");
-my $ret;
-$ret = system("wget -N -e \"convert-links=off\" --load-cookies /dev/null --tries 10 --no-check-certificate \"$download\"  -O \"$blockdest\"");
-print $ret;
-if ($ret != 0) {
-	unlink($blockdest);
-}
+system("curl -I '$download' 2>/dev/null | egrep 'Content-Length' | awk '{print \$NF}'");
+
 #my ($filesize) = -s "$prefix$title.webm";
 #print $filesize;
 

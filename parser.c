@@ -15,19 +15,19 @@ void getTrackerConfig(int* port, int* threads)
 	{
 	        if (cur_node->type == XML_ELEMENT_NODE) 
 		{
-			if(strcmp(cur_node->name,"port") == 0)
+			if(strcmp((char *)cur_node->name,"port") == 0)
 			{
-				*port = atoi(cur_node->children->content);
+				*port = atoi((char *)cur_node->children->content);
 			}
-			if(strcmp(cur_node->name,"threads") == 0)
+			if(strcmp((char *)cur_node->name,"threads") == 0)
 			{
-				*threads = atoi(cur_node->children->content);
+				*threads = atoi((char *)cur_node->children->content);
 			}
 	        }
     	}
 }
 
-void getClientConfig(char** tracker_ip, int* tracker_port, int* own_ip, int *peer_port, int *stream_port, char** str_dir, int* block_size)
+void getClientConfig(char** tracker_ip, int* tracker_port, char** own_ip, int *peer_port, int *stream_port, char** str_dir, int* block_size)
 {
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL;
@@ -42,43 +42,45 @@ void getClientConfig(char** tracker_ip, int* tracker_port, int* own_ip, int *pee
 	{
 	        if (cur_node->type == XML_ELEMENT_NODE) 
 		{
-			if(strcmp(cur_node->name,"tracker") == 0)
+			if(strcmp((char *)cur_node->name,"tracker") == 0)
 			{
 				xmlNode *internalNode = NULL;
 				for(internalNode = cur_node->children; internalNode; internalNode = internalNode->next)
 				{
-					if(strcmp(internalNode->name, "ip") == 0)
+					if(strcmp((char *)internalNode->name, "ip") == 0)
 					{
-						*tracker_ip = (char *) malloc(sizeof(internalNode->children->content) * sizeof(char));
-						strcpy(*tracker_ip, internalNode->children->content);
+						*tracker_ip = (char *) malloc(sizeof((char *)internalNode->children->content) * sizeof(char));
+						strcpy(*tracker_ip, (char *)internalNode->children->content);
 						//tracker_ip = internalNode->children->content;
 					}
-					if(strcmp(internalNode->name, "port") == 0)
+					if(strcmp((char *)internalNode->name, "port") == 0)
 					{
-						*tracker_port = atoi(internalNode->children->content);
+						*tracker_port = atoi((char *)internalNode->children->content);
 					}					
 				}
 			}
-			if(strcmp(cur_node->name,"ip") == 0)
+			if(strcmp((char *)cur_node->name,"ip") == 0)
 			{
-				*own_ip = atoi(cur_node->children->content);
+				*own_ip = (char *) malloc(sizeof((char *)cur_node->children->content) * sizeof(char));
+				strcpy(*own_ip, (char *)cur_node->children->content);
+				//*own_ip = atoi(cur_node->children->content);
 			}
-			if(strcmp(cur_node->name,"pport") == 0)
+			if(strcmp((char *)cur_node->name,"pport") == 0)
 			{
-				*peer_port = atoi(cur_node->children->content);
+				*peer_port = atoi((char *)cur_node->children->content);
 			}
-			if(strcmp(cur_node->name,"sport") == 0)
+			if(strcmp((char *)cur_node->name,"sport") == 0)
 			{
-				*stream_port = atoi(cur_node->children->content);
+				*stream_port = atoi((char *)cur_node->children->content);
 			}
-			if(strcmp(cur_node->name,"directory") == 0)
+			if(strcmp((char *)cur_node->name,"directory") == 0)
 			{
-				*str_dir = cur_node->children->content;
-				strcpy(*str_dir, cur_node->children->content);
+				*str_dir = (char *)cur_node->children->content;
+				strcpy(*str_dir, (char *)cur_node->children->content);
 			}
-			if(strcmp(cur_node->name,"blocksize") == 0)
+			if(strcmp((char *)cur_node->name,"blocksize") == 0)
 			{
-				*block_size = atoi(cur_node->children->content);
+				*block_size = atoi((char *)cur_node->children->content);
 			}
 	        }
     	}

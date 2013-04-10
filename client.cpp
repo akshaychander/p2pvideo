@@ -1,6 +1,8 @@
 #include "common.h"
 #include <pthread.h>
 #include <iostream>
+#include "parser.h"
+
 #define MAX_CLIENT_THREADS 7
 
 int clients_port = 7501;  	// Each client listens on this port for incoming connections from other clients
@@ -208,7 +210,7 @@ handleStreaming(void *param) {
 						char response[1024];
 						int end_range = range_offset + num_bytes - 1;
 						int header_bytes = sprintf(response, "HTTP/1.1 206 Partial Content\r\n"
-							"Content-Type: video/mp4\r\nContent-Range: bytes "
+							"Content-Type: video/webm\r\nContent-Range: bytes "
 							"%d-%d/%d\r\nTransfer-Encoding: chunked\r\n\r\n",
 							range_offset, end_range, filesize);
 						cout<<response<<endl;
@@ -239,7 +241,12 @@ int main(int argc, char **argv) {
 	string tracker_ip = "127.0.0.1";
 	int tracker_port = 7500;
 	storage_directory = "/home/deepthought/sandbox/p2pvideo/files";
-
+	char *tip, *dir, *cip;
+	int bsize;
+	getClientConfig(&tip, &tracker_port, &cip, &clients_port, &streaming_port, &dir, &bsize);
+	tracker_ip = tip;
+	ip = cip;
+	storage_directory = dir;
 	if (argc == 5) {
 		ip = argv[1];
 		port = atoi(argv[2]);

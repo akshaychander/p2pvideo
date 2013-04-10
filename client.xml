@@ -4,8 +4,8 @@
                <port>7500</port>
        </tracker>
        <ip>127.0.0.1</ip>
-       <pport>7501</pport>
+       <pport>6000</pport>
        <sport>10000</sport>
-       <directory>/tmp</directory>
+       <directory>/home/deepthought/sandbox/p2pvideo/files/</directory>
        <blocksize>1000000</blocksize>
 </client>
