@@ -351,7 +351,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	cout<<"name = "<<name<<endl;
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
-		cout<<"Not found in cache. Fetch from source"<<endl;
+		cout<<"Not found in cache!"<<endl;
 		
 		/* Replace this with fetch from youtube */
 		int filesize = readFile(name.c_str());
@@ -451,10 +451,15 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			memcpy(resp_data, block_data + blockOffset, resp_size);
 			return resp_data;
 		} else {
+			cout<<"Peer "<<peer_id<<" has block."<<endl;
 			Client peer = peers[peer_id];
 			string peer_ip_address = peer.getIP();
 			int port = peer.getPort();
 			int peerfd = connectToHost(peer_ip_address, port);
+			if (peerfd == -1) {
+				cout<<"Connect to peer failed with error: "<<strerror(errno)<<endl;
+				exit(1);
+			}
 
 			char header[HEADER_SZ];
 			int op = CLIENT_REQ_DATA;
@@ -473,12 +478,12 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			memcpy(data + offset, (char *)&url_len, sizeof(int));
 			offset += sizeof(int);
 
-			memcpy(data + offset, name.c_str(), sizeof(int));
+			memcpy(data + offset, name.c_str(), url_len);
 			offset += url_len;
 
 			bytes_sent = send(peerfd, data, req_size, 0);
-			assert(bytes_sent == req_size);
 			cout<<"Bytes sent = "<<bytes_sent<<endl;
+			assert(bytes_sent == req_size);
 			free(data);	//Only client serialize uses malloc
 
 			char response_header[HEADER_SZ];
@@ -491,8 +496,13 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			cout<<"About to receive "<<num_bytes<<" from peer"<<endl;
 			char *recv_data = new char[num_bytes];
 
-			bytes_rcvd = recv(peerfd, recv_data, num_bytes, 0);
-			assert(bytes_rcvd == num_bytes);
+			int bytes_pending = num_bytes, start_offset = 0;
+			while (bytes_pending != 0) {
+				bytes_rcvd = recv(peerfd, recv_data + start_offset, bytes_pending, 0);
+				cout<<"Received "<<bytes_rcvd<<" bytes"<<endl;
+				bytes_pending -= bytes_rcvd;
+				start_offset += bytes_rcvd;
+			}
 			close(peerfd);
 
 			FILE *blockfile = fopen(blockname.c_str(), "w");
@@ -506,9 +516,41 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			files[i].updateBlockInfo(b);
 			resp_size = num_bytes - blockOffset;
 			memcpy(resp_data, recv_data + blockOffset, resp_size);
+			close(peerfd);
 			delete[] recv_data;
 			return resp_data;
 		}
+	}
+}
+
+void
+Client::sendBlock(int sockfd, string name, int blocknum) {
+	int offset = 0;
+	char header[HEADER_SZ];
+	int op, fsize, bsize, resp_size;
+	
+	int i = getFileIdxByURL(name);
+	if (i == -1) {
+		cout<<"Tracker corruption!"<<endl;
+		exit(1);
+	}
+	files[i].getSizeInfo(fsize, bsize);
+	char *data = getBlock(name, blocknum * bsize, bsize, resp_size, fsize);
+
+	memcpy(header + offset, (char *)&op, sizeof(int));
+	offset += sizeof(int);
+	memcpy(header + offset, (char *)&resp_size, sizeof(int));
+	offset += sizeof(int);
+
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+
+	int bytes_pending = resp_size, start_offset = 0;
+	while (bytes_pending != 0) {
+		bytes_sent = send(sockfd, data + start_offset, bytes_pending, 0);
+		cout<<"Sent "<<bytes_sent<<" bytes"<<endl;
+		start_offset += bytes_sent;
+		bytes_pending -= bytes_sent;
 	}
 }
 

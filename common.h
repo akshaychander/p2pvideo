@@ -143,6 +143,8 @@ class Client {
 
 		char* getBlock(string name, int start, int req_size, int& resp_size, int& fsize);
 
+		void sendBlock(int sockfd, string name, int blocknum);
+
 		void setTrackerFd(int sockfd);
 
 		void connectToTracker(string tracker_ip, int port);

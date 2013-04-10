@@ -5,7 +5,7 @@
 
 int clients_port = 7501;  	// Each client listens on this port for incoming connections from other clients
 int clients_sockfd;		// Client socket fd
-
+int tracker_fd;
 
 int streaming_port = 10000;
 
@@ -14,12 +14,51 @@ string storage_directory;
 Client c;
 
 
-// Function to transfer the file between peers
-void * fileTransfer(void *clientsockfd)
-{
+/*
+ * Function to transfer the file between peers. Receives request for a block and
+ * sends that block. Closes connection after transfer is complete.
+ */
+
+void *
+fileTransfer(void *clientsockfd) {
+	long sockfd = (long)clientsockfd;
+	char header[HEADER_SZ];
+	int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_rcvd == HEADER_SZ);
+	int op, reqsize;
+	int offset = 0;
+	int urllen, blocknum;
+
+	memcpy((char *)&op, header, sizeof(int));
+	offset += sizeof(int);
+	memcpy((char *)&reqsize, header + offset, sizeof(int));
+	offset = 0;
+
+	cout<<"OP = "<<op<<" Req size = "<<reqsize<<endl;
+	char* data = new char[reqsize];
+	bytes_rcvd = recv(sockfd, data, reqsize, 0);
+	if (op == CLIENT_REQ_DATA) {
+		memcpy((char *)&blocknum, data + offset, sizeof(int));
+		offset += sizeof(int);
+
+		memcpy((char *)&urllen, data + offset, sizeof(int));
+		offset += sizeof(int);
+
+		char requrl[urllen + 1];
+
+		memcpy(requrl, data + offset, urllen);
+		cout<<"url len = "<<urllen<<endl;
+		offset += urllen;
+		requrl[urllen] = '\0';
+		string url = requrl;
+		cout<<"Peer has requested block "<<blocknum<<" for file "<<url<<endl;
+		c.sendBlock(sockfd, url, blocknum);
+	}
+	close(sockfd);
+	return NULL;
 }
 
-
+/*
 // Returns socketfd on success
 int connectToTracker(string tracker_ip, int port) {
 	struct addrinfo hints, *res;
@@ -127,7 +166,7 @@ void queryTracker(int sockfd, Client& clnt) {
 	delete[] data;
 
 }
-
+*/
 void *
 handleStreaming(void *param) {
 	int sockfd = bindToPort("127.0.0.1", streaming_port);
@@ -199,10 +238,16 @@ int main(int argc, char **argv) {
 	int port = 5000;
 	string tracker_ip = "127.0.0.1";
 	int tracker_port = 7500;
+	storage_directory = "/home/deepthought/sandbox/p2pvideo/files";
 
-	if (argc == 3) {
+	if (argc == 5) {
 		ip = argv[1];
 		port = atoi(argv[2]);
+		storage_directory = argv[3];
+		streaming_port = atoi(argv[4]);
+		cout<<"storage directory is "<<storage_directory<<endl;
+		clients_port = port;
+
 		/*
 		ip += ":";
 		ip += argv[2];
@@ -210,6 +255,7 @@ int main(int argc, char **argv) {
 		cout<<ip<<endl;
 	}
 
+	/*
 	vector<bool> tmap;
 	int tnum = 5;
 	for (int i = 0; i < tnum; i++) {
@@ -245,9 +291,6 @@ int main(int argc, char **argv) {
 	//dclient.deserialize(data2, size2);
 	//dclient.print();
 
-	storage_directory = "/home/deepthought/sandbox/p2pvideo/files";
-	Client tmpc(ip, port, storage_directory);
-	c = tmpc;
 	int sockfd = connectToTracker(tracker_ip, tracker_port);
 	if (sockfd != -1) {
 		cout<<"Connected to tracker"<<endl;
@@ -260,8 +303,12 @@ int main(int argc, char **argv) {
 	int file_idx = tclient.getFileIdxByURL(filename);
 	//tclient.updateFile(file_idx, tmap);
 	//updateOnTracker(sockfd, tclient);
-	registerWithTracker(sockfd, c);
-	queryTracker(sockfd, c);
+	*/
+	Client tmpc(ip, clients_port, storage_directory);
+	c = tmpc;
+	c.connectToTracker(tracker_ip, tracker_port);
+	c.registerWithTracker();
+	c.queryTracker();
 
 	string _ip = "127.0.0.1";
 	pthread_t streamer;
