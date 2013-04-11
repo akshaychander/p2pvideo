@@ -1,5 +1,29 @@
 #include "common.h"
 #define DEFAULT_BLK_SIZE	1000000
+
+void
+sendSocketData(int sockfd, int size, char *data) {
+	int bytes_pending = size, start_offset = 0;
+	while (bytes_pending != 0) {
+		int bytes_sent = send(sockfd, data + start_offset, bytes_pending, 0);
+		//cout<<"Sent "<<bytes_sent<<" bytes"<<endl;
+		start_offset += bytes_sent;
+		bytes_pending -= bytes_sent;
+	}
+}
+
+//Assumes that memory has been allocated for data
+void
+recvSocketData(int sockfd, int size, char *data) {
+	int bytes_pending = size, start_offset = 0;
+	while (bytes_pending != 0) {
+		int bytes_rcvd = recv(sockfd, data + start_offset, bytes_pending, 0);
+		//cout<<"Received "<<bytes_rcvd<<" bytes"<<endl;
+		bytes_pending -= bytes_rcvd;
+		start_offset += bytes_rcvd;
+	}
+}
+
 /*
  * Get video length information from the URL somehow.
  */
@@ -549,8 +573,11 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 							sizeof(int) + name.length(); //URL info
 			memcpy(header, (char *)&op, sizeof(int));
 			memcpy(header + sizeof(int), (char *)&req_size, sizeof(int));
+			/*
 			int bytes_sent = send(peerfd, header, HEADER_SZ, 0);
 			assert(bytes_sent == HEADER_SZ);
+			*/
+			sendSocketData(peerfd, HEADER_SZ, header);
 			char *data = new char[req_size];
 			int offset = 0;
 			memcpy(data + offset, (char *)&blocknum, sizeof(int));
@@ -563,14 +590,18 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			memcpy(data + offset, name.c_str(), url_len);
 			offset += url_len;
 
+			/*
 			bytes_sent = send(peerfd, data, req_size, 0);
 			//cout<<"Bytes sent = "<<bytes_sent<<endl;
 			assert(bytes_sent == req_size);
+			*/
+			sendSocketData(peerfd, req_size, data);
 			free(data);	//Only client serialize uses malloc
 
 			char response_header[HEADER_SZ];
-			int bytes_rcvd = recv(peerfd, header, HEADER_SZ, 0); 
-			assert(bytes_rcvd == HEADER_SZ);
+			//int bytes_rcvd = recv(peerfd, header, HEADER_SZ, 0); 
+			//assert(bytes_rcvd == HEADER_SZ);
+			recvSocketData(peerfd, HEADER_SZ, header);
 
 			int num_bytes;
 			//WE dont care about op field in response
@@ -578,6 +609,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			//cout<<"About to receive "<<num_bytes<<" from peer"<<endl;
 			char *recv_data = new char[num_bytes];
 
+			/*
 			int bytes_pending = num_bytes, start_offset = 0;
 			while (bytes_pending != 0) {
 				bytes_rcvd = recv(peerfd, recv_data + start_offset, bytes_pending, 0);
@@ -585,6 +617,8 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 				bytes_pending -= bytes_rcvd;
 				start_offset += bytes_rcvd;
 			}
+			*/
+			recvSocketData(peerfd, num_bytes, recv_data);
 			close(peerfd);
 
 			FILE *blockfile = fopen(blockname.c_str(), "w");
@@ -642,9 +676,12 @@ Client::sendBlock(int sockfd, string name, int blocknum) {
 	memcpy(header + offset, (char *)&resp_size, sizeof(int));
 	offset += sizeof(int);
 
+	/*
 	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
 	assert(bytes_sent == HEADER_SZ);
-
+	*/
+	sendSocketData(sockfd, HEADER_SZ, header);
+	/*
 	int bytes_pending = resp_size, start_offset = 0;
 	while (bytes_pending != 0) {
 		bytes_sent = send(sockfd, data + start_offset, bytes_pending, 0);
@@ -652,6 +689,8 @@ Client::sendBlock(int sockfd, string name, int blocknum) {
 		start_offset += bytes_sent;
 		bytes_pending -= bytes_sent;
 	}
+	*/
+	sendSocketData(sockfd, resp_size, data);
 }
 
 string
@@ -866,10 +905,16 @@ Client::registerWithTracker() {
 	data = serialize(size);
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	/*
 	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
 	assert(bytes_sent == HEADER_SZ);
+	*/
+	sendSocketData(sockfd, HEADER_SZ, header);
+	/*
 	bytes_sent = send(sockfd, data, size, 0);
 	assert(bytes_sent == size);
+	*/
+	sendSocketData(sockfd, size, data);
 	//cout<<"Bytes sent = "<<bytes_sent<<endl;
 	free(data);	//Only client serialize uses malloc
 }
@@ -886,10 +931,17 @@ Client::updateOnTracker() {
 	data = serialize(size);
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	/*
 	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
 	assert(bytes_sent == HEADER_SZ);
+	*/
+	sendSocketData(sockfd, HEADER_SZ, header);
+
+	/*
 	bytes_sent = send(sockfd, data, size, 0);
 	assert(bytes_sent == size);
+	*/
+	sendSocketData(sockfd, size, data);
 	//cout<<"Bytes sent = "<<bytes_sent<<endl;
 	free(data);	//Only client serialize uses malloc
 }
@@ -905,19 +957,25 @@ Client::queryTracker() {
 	cout<<"Query tracker"<<endl;
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	/*
 	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
 	assert(bytes_sent == HEADER_SZ);
-
+	*/
+	sendSocketData(sockfd, HEADER_SZ, header);
 	//Now, receive info from tracker
 
-	int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0); 
-	assert(bytes_rcvd == HEADER_SZ);
+	//int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0); 
+	//assert(bytes_rcvd == HEADER_SZ);
+	recvSocketData(sockfd, HEADER_SZ, header);
 
 	//Ignore op field in response and take the packet size
 	memcpy((char *)&size, header + sizeof(int), sizeof(int));
 	data = new char[size];
+	/*
 	bytes_rcvd = recv(sockfd, data, size, 0);
 	assert(bytes_rcvd == size);
+	*/
+	recvSocketData(sockfd, size, data);
 	//cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
 
 	int num_clients, offset = 0;

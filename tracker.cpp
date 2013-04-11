@@ -170,11 +170,18 @@ handleClient(void *clientsockfd) {
 				// op is not required, but makes things more consistent.
 				memcpy(response_header, (char *)&op, sizeof(int));
 				memcpy(response_header + sizeof(int), (char *)&tsize, sizeof(int));
+				/*
 				bytes_sent = send(clientfd, response_header, HEADER_SZ, 0);
 				assert(bytes_sent == HEADER_SZ);
+				*/
+				sendSocketData(clientfd, HEADER_SZ, response_header);
+
+				/*
 				bytes_sent = send(clientfd, tdata, tsize, 0);
 				assert(bytes_sent == tsize);
 				cout<<"Bytes sent = "<<bytes_sent<<endl;
+				*/
+				sendSocketData(clientfd, tsize, tdata);
 				free(tdata);	//Only client serialize uses malloc
 				break;
 
@@ -204,9 +211,12 @@ handleClient(void *clientsockfd) {
 				t.update(idx, f);
 				*/
 				cout<<"Update from client"<<endl;
+				/*
 				bytes_rcvd = recv(clientfd, data, packet_size, 0);
 				assert(bytes_rcvd == packet_size);
 				cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
+				*/
+				recvSocketData(clientfd, packet_size, data);
 				c.deserialize(data, packet_size);
 				//c.print();
 

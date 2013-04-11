@@ -26,8 +26,9 @@ void *
 fileTransfer(void *clientsockfd) {
 	long sockfd = (long)clientsockfd;
 	char header[HEADER_SZ];
-	int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0);
-	assert(bytes_rcvd == HEADER_SZ);
+	//int bytes_rcvd = recv(sockfd, header, HEADER_SZ, 0);
+	//assert(bytes_rcvd == HEADER_SZ);
+	recvSocketData(sockfd, HEADER_SZ, header);
 	int op, reqsize;
 	int offset = 0;
 	int urllen, blocknum;
@@ -39,7 +40,8 @@ fileTransfer(void *clientsockfd) {
 
 	//cout<<"OP = "<<op<<" Req size = "<<reqsize<<endl;
 	char* data = new char[reqsize];
-	bytes_rcvd = recv(sockfd, data, reqsize, 0);
+	//bytes_rcvd = recv(sockfd, data, reqsize, 0);
+	recvSocketData(sockfd,reqsize, data);
 	if (op == CLIENT_REQ_DATA) {
 		memcpy((char *)&blocknum, data + offset, sizeof(int));
 		offset += sizeof(int);
@@ -207,7 +209,8 @@ handleStreaming(void *param) {
 			int offset = 0;
 			char crlf[5] = "\r\n\r\n";
 			while (1) {
-				int bytes_recv = recv(new_fd, header + offset, 1, 0);
+				//int bytes_recv = recv(new_fd, header + offset, 1, 0);
+				recvSocketData(new_fd, 1, header + offset);
 				//cout<<header[offset];
 				if (offset >= 3) {
 					if (memcmp(header + offset - 3, crlf, 4) == 0) {
@@ -228,16 +231,19 @@ handleStreaming(void *param) {
 							range_offset, end_range, filesize);
 						cout<<response<<endl;
 						//cout<<"num bytes = "<<num_bytes<<endl;
-						cout<<"Bytes sent = "<<send(new_fd, response, header_bytes, 0)<<endl;
-
+						//cout<<"Bytes sent = "<<send(new_fd, response, header_bytes, 0)<<endl;
+						sendSocketData(new_fd, header_bytes, response);
 						int size_bytes = sprintf(response, "%x\r\n", num_bytes);
 						cout<<response<<endl;
 						cout<<"size bytes = "<<size_bytes<<" num_bytes = "<<num_bytes<<endl;
-						send(new_fd, response, size_bytes, 0);
-						cout<<"File bytes sent = "<<send(new_fd, filedata, num_bytes, 0)<<endl;
+						//send(new_fd, response, size_bytes, 0);
+						sendSocketData(new_fd, size_bytes, response);
+						//cout<<"File bytes sent = "<<send(new_fd, filedata, num_bytes, 0)<<endl;
+						sendSocketData(new_fd, num_bytes, filedata);
 						size_bytes = sprintf(response, "\r\n0\r\n\r\n");
 						cout<<response<<endl;
-						send(new_fd, response, size_bytes, 0);
+						//send(new_fd, response, size_bytes, 0);
+						sendSocketData(new_fd, size_bytes, response);
 						delete[] filedata;
 						offset = 0;
 						int newstart = range_offset + (3 + (rand() % 5)) * num_bytes;

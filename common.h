@@ -170,3 +170,5 @@ void getRangeOffset(char *header, int& start, int& end);
 int readFile(const char *name);
 char *getFileName(char *header);
 //void* prefetchBlock(char *name);
+void sendSocketData(int sockfd, int size, char *data);
+void recvSocketData(int sockfd, int size, char *data);
