@@ -15,6 +15,7 @@ string storage_directory;
 
 Client c;
 
+pthread_rwlock_t client_mutex;
 
 /*
  * Function to transfer the file between peers. Receives request for a block and
@@ -36,7 +37,7 @@ fileTransfer(void *clientsockfd) {
 	memcpy((char *)&reqsize, header + offset, sizeof(int));
 	offset = 0;
 
-	cout<<"OP = "<<op<<" Req size = "<<reqsize<<endl;
+	//cout<<"OP = "<<op<<" Req size = "<<reqsize<<endl;
 	char* data = new char[reqsize];
 	bytes_rcvd = recv(sockfd, data, reqsize, 0);
 	if (op == CLIENT_REQ_DATA) {
@@ -49,7 +50,7 @@ fileTransfer(void *clientsockfd) {
 		char requrl[urllen + 1];
 
 		memcpy(requrl, data + offset, urllen);
-		cout<<"url len = "<<urllen<<endl;
+		//cout<<"url len = "<<urllen<<endl;
 		offset += urllen;
 		requrl[urllen] = '\0';
 		string url = requrl;
@@ -169,6 +170,19 @@ void queryTracker(int sockfd, Client& clnt) {
 
 }
 */
+
+struct pargs {
+	char name[256];
+	int offset;
+	int bsize;
+	int fsize;
+};
+
+void *prefetcher(void *args) {
+	struct pargs *myargs = (struct pargs *)args;
+	char *filedata = c.getBlock(myargs->name, myargs->offset, 0, myargs->bsize, myargs->fsize);
+	delete[] filedata;
+}
 void *
 handleStreaming(void *param) {
 	int sockfd = bindToPort("127.0.0.1", streaming_port);
@@ -187,7 +201,7 @@ handleStreaming(void *param) {
 			int chunk_size = 1000000;
 			int filesize = readFile("test.mp4");
 			int roundoff = (filesize / chunk_size) * chunk_size;
-			cout<<"roundoff = "<<roundoff<<endl;
+			//cout<<"roundoff = "<<roundoff<<endl;
 			int range_offset = 0;
 			FILE *fp = fopen("test.mp4", "r");
 			int offset = 0;
@@ -197,7 +211,7 @@ handleStreaming(void *param) {
 				//cout<<header[offset];
 				if (offset >= 3) {
 					if (memcmp(header + offset - 3, crlf, 4) == 0) {
-						cout<<"done!"<<endl;
+						//cout<<"done!"<<endl;
 						cout<<"header:\n"<<header<<endl;
 						int start, end;
 						getRangeOffset(header, start, end);
@@ -205,7 +219,7 @@ handleStreaming(void *param) {
 						range_offset = start;
 						int num_bytes;
 						char *filedata = c.getBlock(requrl, range_offset, 0, num_bytes, filesize);
-						cout<<"block size = "<<num_bytes<<endl;
+						//cout<<"block size = "<<num_bytes<<endl;
 						char response[1024];
 						int end_range = range_offset + num_bytes - 1;
 						int header_bytes = sprintf(response, "HTTP/1.1 206 Partial Content\r\n"
@@ -213,7 +227,7 @@ handleStreaming(void *param) {
 							"%d-%d/%d\r\nTransfer-Encoding: chunked\r\n\r\n",
 							range_offset, end_range, filesize);
 						cout<<response<<endl;
-						cout<<"num bytes = "<<num_bytes<<endl;
+						//cout<<"num bytes = "<<num_bytes<<endl;
 						cout<<"Bytes sent = "<<send(new_fd, response, header_bytes, 0)<<endl;
 
 						int size_bytes = sprintf(response, "%x\r\n", num_bytes);
@@ -226,11 +240,44 @@ handleStreaming(void *param) {
 						send(new_fd, response, size_bytes, 0);
 						delete[] filedata;
 						offset = 0;
+						int newstart = range_offset + (3 + (rand() % 5)) * num_bytes;
+						//int newstart = range_offset + (17) * num_bytes;
+						if (newstart < filesize) {
+							cout<<"Prefetching random block with offset "<<newstart<<endl;
+							struct pargs args;
+							sprintf(args.name, "%s", requrl);
+							args.offset = newstart;
+							args.bsize = num_bytes;
+							args.fsize = filesize;
+							//filedata = c.getBlock(requrl, newstart, 0, num_bytes, filesize);
+							pthread_t tmpt;
+							pthread_create(&tmpt, NULL, prefetcher, (void *)&args);
+						}
 					}
 				} 
 				offset++;
 			}
 		}
+	}
+}
+
+void *
+handleQuery(void *param) {
+	while (1) {
+		pthread_rwlock_wrlock(&client_mutex);
+		c.queryTracker();
+		pthread_rwlock_unlock(&client_mutex);
+		sleep(5);
+	}
+}
+
+void *
+handleUpdate(void *param) {
+	while (1) {
+		pthread_rwlock_rdlock(&client_mutex);
+		c.updateOnTracker();
+		pthread_rwlock_unlock(&client_mutex);
+		sleep(5);
 	}
 }
 
@@ -310,14 +357,17 @@ int main(int argc, char **argv) {
 	//tclient.updateFile(file_idx, tmap);
 	//updateOnTracker(sockfd, tclient);
 	*/
+	pthread_rwlock_init(&client_mutex, NULL);
 	Client tmpc(ip, clients_port, storage_directory);
 	c = tmpc;
 	c.connectToTracker(tracker_ip, tracker_port);
 	c.registerWithTracker();
 	c.queryTracker();
-
-	pthread_t streamer;
+	c.client_mutex = &client_mutex;
+	pthread_t streamer, queryThread, updateThread;
 	pthread_create(&streamer, NULL, handleStreaming, NULL);
+	pthread_create(&queryThread, NULL, handleQuery, NULL);
+	pthread_create(&updateThread, NULL, handleUpdate, NULL);
 	clients_sockfd = bindToPort(ip, clients_port);
 	if(clients_sockfd == -1)
 	{

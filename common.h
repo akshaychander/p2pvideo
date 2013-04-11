@@ -119,6 +119,8 @@ class Client {
 	int		trackerfd;
 
 	public:
+		pthread_rwlock_t *client_mutex;
+
 		Client();
 
 		Client(string ip, int port, string dir);
@@ -143,6 +145,7 @@ class Client {
 
 		char* getBlock(string name, int start, int req_size, int& resp_size, int& fsize);
 
+		//friend void * prefetchBlock(char* name);
 		void sendBlock(int sockfd, string name, int blocknum);
 
 		void setTrackerFd(int sockfd);
@@ -166,3 +169,4 @@ int connectToHost(const string& ip, const int& port);
 void getRangeOffset(char *header, int& start, int& end);
 int readFile(const char *name);
 char *getFileName(char *header);
+//void* prefetchBlock(char *name);

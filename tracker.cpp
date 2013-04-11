@@ -162,6 +162,7 @@ handleClient(void *clientsockfd) {
 				int tsize, bytes_sent;
 				char response_header[HEADER_SZ];
 
+				cout<<"Query from client"<<endl;
 				pthread_mutex_lock(&_mutex2);
 				tdata = t.serialize(tsize);
 				pthread_mutex_unlock(&_mutex2);
@@ -202,15 +203,16 @@ handleClient(void *clientsockfd) {
 				f.print();
 				t.update(idx, f);
 				*/
+				cout<<"Update from client"<<endl;
 				bytes_rcvd = recv(clientfd, data, packet_size, 0);
 				assert(bytes_rcvd == packet_size);
 				cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
 				c.deserialize(data, packet_size);
-				c.print();
+				//c.print();
 
 				pthread_mutex_lock(&_mutex3);
-				  t.update(c);
-				  t.print();
+				t.update(c);
+				//t.print();
 				pthread_mutex_unlock(&_mutex3);
 				break;
 		}
@@ -218,7 +220,7 @@ handleClient(void *clientsockfd) {
 }
 
 int main() {
-	string ip = "192.168.1.4";
+	string ip = "192.168.1.7";
 	sockfd = bindToPort(ip, port);
 	if (sockfd == -1) {
 		cout<<"Could not create socket or bind to port"<<endl;

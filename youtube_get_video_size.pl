@@ -9,7 +9,7 @@ my $url = $ARGV[0] or die "\nError: You need to specify a YouTube URL\n\n";
 my $prefix = defined($ARGV[1]) ? $ARGV[1] : "";
 
 
-my $html = `wget -Ncq -e "convert-links=off" --keep-session-cookies --save-cookies /dev/null --no-check-certificate "$url" -O-`  or die  "\nThere was a problem downloading the HTML file.\n\n";
+my $html = `wget -Ncq -e "convert-links=off" --tries 1 --keep-session-cookies --save-cookies /dev/null --no-check-certificate "$url" -O-`  or die  "\nThere was a problem downloading the HTML file.\n\n";
 
 
 my ($title) = $html =~ m/<title>(.+)<\/title>/si;

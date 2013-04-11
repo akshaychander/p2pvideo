@@ -5,19 +5,14 @@
  */
 int getVideoLength(string url) {
 	char command[256];
-	int retries = 5;
+	int retries = 1;
 
 	sprintf(command, "./youtube_get_video_size.pl https://www.youtube.com/watch?v=%s", url.c_str());
+	cout<<"Command is "<<command<<endl;
 	FILE *fp = NULL;
-	while (retries > 0) {
-		fp = popen(command, "r");
-		if (!fp) {
-			cout<<"Could not get video size! Retrying."<<endl;
-			retries--;
-		}
-	}
+	fp = popen(command, "r");
 	if (!fp) {
-		cout<<"Could not execute youtube_get_video_size.pl!"<<endl;
+		cout<<"Could not get video size! Retrying."<<endl;
 		exit(1);
 	}
 	char buffer[20];
@@ -322,21 +317,21 @@ Client::initialize() {
 
 		char tmp[1024];
 		fscanf(fp, "url: %s\n", tmp);
-		cout<<tmp<<endl;
+		//cout<<tmp<<endl;
 		string filename = tmp;
 
 		memset(tmp, 0, 1024);
 		fscanf(fp, "filetype: %s\n", tmp);
-		cout<<tmp<<endl;
+		//cout<<tmp<<endl;
 		string filetype = tmp;
 
 		int filesize;
 		fscanf(fp, "filesize: %d\n", &filesize);
-		cout<<filesize<<endl;
+		//cout<<filesize<<endl;
 
 		int blocksize;
 		fscanf(fp, "blocksize: %d\n", &blocksize);
-		cout<<blocksize<<endl;
+		//cout<<blocksize<<endl;
 		fclose(fp);
 		string urlpath = directory + "/" + subname;
 		url_to_folder.insert(pair<string, string>(filename, urlpath));
@@ -360,9 +355,9 @@ Client::initialize() {
 			if (blockname == "." || blockname == ".." || blockname == "metadata") {
 				continue;
 			}
-			cout<<blockname<<endl;
+			//cout<<blockname<<endl;
 			int blocknum = atoi(urlresult->d_name);
-			cout<<"Have block: "<<blocknum<<endl;
+			//cout<<"Have block: "<<blocknum<<endl;
 			bmap[blocknum] = true;
 		}
 		closedir(urldir);
@@ -374,7 +369,11 @@ Client::initialize() {
 
 char *
 Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsize) {
+
 	cout<<"name = "<<name<<endl;
+	pthread_t pf;
+	//pthread_rwlock_rdlock(this->client_mutex);	// Upgrading rd to wr not working. investigate later
+	pthread_rwlock_wrlock(this->client_mutex);
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
 		cout<<"Not found in cache!"<<endl;
@@ -391,16 +390,16 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		for (it = url_to_folder.begin(); it != url_to_folder.end(); it++) {
 			const char *tmp = (it->second).c_str();
 			const char *foldername = strrchr(tmp, '/') + 1;
-			cout<<"foldername: "<<foldername<<endl;
+			//cout<<"foldername: "<<foldername<<endl;
 			int max_id = atoi(foldername);
 			if (folder_id <= max_id) {
 				folder_id = max_id + 1;
 			}
 		}
-		cout<<"FOlder id = "<<folder_id<<endl;
+		//cout<<"FOlder id = "<<folder_id<<endl;
 		char foldername[64];
 		sprintf(foldername, "%s/%d", directory.c_str(), folder_id);
-		cout<<"foldername = "<<foldername<<endl; 
+		//cout<<"foldername = "<<foldername<<endl; 
 		if (mkdir(foldername ,S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH | S_IXUSR | S_IXGRP | S_IXOTH) != 0) {
 			cout<<"mkdir failed with error: "<<strerror(errno)<<endl;
 			exit(1);
@@ -419,7 +418,9 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		fclose(metadata);
 		url_to_folder.insert(pair<string, string>(name, foldername));
 		File f(name, bmap, filesize, blocksize);
+		//pthread_rwlock_wrlock(this->client_mutex);	//upgrade to write lock
 		files.push_back(f);
+		//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
 		i = getFileIdxByURL(name);
 	}
 	if (i == -1) {
@@ -429,7 +430,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	File f = files[i];
 	int filesize, blocksize;
 	f.getSizeInfo(filesize, blocksize);
-	cout<<"Blocksize according to file = "<<blocksize<<endl;
+	//cout<<"Blocksize according to file = "<<blocksize<<endl;
 	fsize = filesize;
 	int blocknum = start / blocksize;
 	BlockMap b = f.getBlockInfo();
@@ -445,6 +446,9 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		fseek(fp, blockOffset, 0);
 		resp_size = fread(resp_data, 1, blocksize, fp);
 		fclose(fp);
+		pthread_rwlock_unlock(this->client_mutex);
+		//char *tmpname = (char *)name.c_str();
+		//pthread_create(&pf, NULL, prefetchBlock, (void *)tmpname);
 		return resp_data;
 	} else {
 		/* First check if a peer has the block */
@@ -453,6 +457,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			char command[256];
 			int startRange= blocknum * blocksize;
 			int endRange = (startRange + blocksize >= filesize) ? (filesize - 1) : (startRange + blocksize - 1);
+			pthread_rwlock_unlock(this->client_mutex);
 			sprintf(command, "./youtube_get_video.pl https://www.youtube.com/watch?v=%s %s %d %d", name.c_str(), blockname.c_str(), startRange, endRange);
 			cout<<"Command = "<<command<<endl;
 			/*
@@ -484,8 +489,21 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			fseek(fp, blockOffset, 0);
 			resp_size = fread(resp_data, 1, blocksize, fp);
 			fclose(fp);
+			pthread_rwlock_wrlock(this->client_mutex);
+			i = getFileIdxByURL(name);		//i could have changed due to queryTracker
+			if (i == -1) {
+				cout<<"Client corruption!"<<endl;
+				exit(1);
+			}
+			b = f.getBlockInfo();
+			if (b.hasBlock(blocknum)) {
+			}
 			b.setBlock(blocknum);
+			//pthread_rwlock_wrlock(this->client_mutex);	//upgrade to write lock
 			files[i].updateBlockInfo(b);
+			//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
+
+			pthread_rwlock_unlock(this->client_mutex);
 			return resp_data;
 			/*
 			FILE *source = fopen(name.c_str(), "r");
@@ -518,6 +536,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			Client peer = peers[peer_id];
 			string peer_ip_address = peer.getIP();
 			int port = peer.getPort();
+			pthread_rwlock_unlock(this->client_mutex);
 			int peerfd = connectToHost(peer_ip_address, port);
 			if (peerfd == -1) {
 				cout<<"Connect to peer failed with error: "<<strerror(errno)<<endl;
@@ -545,7 +564,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			offset += url_len;
 
 			bytes_sent = send(peerfd, data, req_size, 0);
-			cout<<"Bytes sent = "<<bytes_sent<<endl;
+			//cout<<"Bytes sent = "<<bytes_sent<<endl;
 			assert(bytes_sent == req_size);
 			free(data);	//Only client serialize uses malloc
 
@@ -556,13 +575,13 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			int num_bytes;
 			//WE dont care about op field in response
 			memcpy((char *)&num_bytes, header + sizeof(int), sizeof(int));
-			cout<<"About to receive "<<num_bytes<<" from peer"<<endl;
+			//cout<<"About to receive "<<num_bytes<<" from peer"<<endl;
 			char *recv_data = new char[num_bytes];
 
 			int bytes_pending = num_bytes, start_offset = 0;
 			while (bytes_pending != 0) {
 				bytes_rcvd = recv(peerfd, recv_data + start_offset, bytes_pending, 0);
-				cout<<"Received "<<bytes_rcvd<<" bytes"<<endl;
+				//cout<<"Received "<<bytes_rcvd<<" bytes"<<endl;
 				bytes_pending -= bytes_rcvd;
 				start_offset += bytes_rcvd;
 			}
@@ -575,16 +594,32 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			}
 			fwrite(recv_data, 1, num_bytes, blockfile);
 			fclose(blockfile);
+			pthread_rwlock_wrlock(this->client_mutex);
+			i = getFileIdxByURL(name);		//i could have changed due to queryTracker
+			if (i == -1) {
+				cout<<"Client corruption!"<<endl;
+				exit(1);
+			}
 			b.setBlock(blocknum);
+			//pthread_rwlock_wrlock(this->client_mutex);	//upgrade to write lock
 			files[i].updateBlockInfo(b);
+			//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
 			resp_size = num_bytes - blockOffset;
 			memcpy(resp_data, recv_data + blockOffset, resp_size);
 			close(peerfd);
 			delete[] recv_data;
+			pthread_rwlock_unlock(this->client_mutex);
 			return resp_data;
 		}
 	}
 }
+
+/*
+void *
+prefetchBlock(char *name) {
+	cout<<"Prefetching "<<name<<endl;
+}
+*/
 
 void
 Client::sendBlock(int sockfd, string name, int blocknum) {
@@ -592,12 +627,14 @@ Client::sendBlock(int sockfd, string name, int blocknum) {
 	char header[HEADER_SZ];
 	int op, fsize, bsize, resp_size;
 	
+	pthread_rwlock_rdlock(this->client_mutex);
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
 		cout<<"Tracker corruption!"<<endl;
 		exit(1);
 	}
 	files[i].getSizeInfo(fsize, bsize);
+	pthread_rwlock_unlock(this->client_mutex);
 	char *data = getBlock(name, blocknum * bsize, bsize, resp_size, fsize);
 
 	memcpy(header + offset, (char *)&op, sizeof(int));
@@ -611,7 +648,7 @@ Client::sendBlock(int sockfd, string name, int blocknum) {
 	int bytes_pending = resp_size, start_offset = 0;
 	while (bytes_pending != 0) {
 		bytes_sent = send(sockfd, data + start_offset, bytes_pending, 0);
-		cout<<"Sent "<<bytes_sent<<" bytes"<<endl;
+		//cout<<"Sent "<<bytes_sent<<" bytes"<<endl;
 		start_offset += bytes_sent;
 		bytes_pending -= bytes_sent;
 	}
@@ -833,7 +870,7 @@ Client::registerWithTracker() {
 	assert(bytes_sent == HEADER_SZ);
 	bytes_sent = send(sockfd, data, size, 0);
 	assert(bytes_sent == size);
-	cout<<"Bytes sent = "<<bytes_sent<<endl;
+	//cout<<"Bytes sent = "<<bytes_sent<<endl;
 	free(data);	//Only client serialize uses malloc
 }
 
@@ -845,6 +882,7 @@ Client::updateOnTracker() {
 	int size;
 	int sockfd = trackerfd;
 
+	cout<<"UPdate tracker"<<endl;
 	data = serialize(size);
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
@@ -852,7 +890,7 @@ Client::updateOnTracker() {
 	assert(bytes_sent == HEADER_SZ);
 	bytes_sent = send(sockfd, data, size, 0);
 	assert(bytes_sent == size);
-	cout<<"Bytes sent = "<<bytes_sent<<endl;
+	//cout<<"Bytes sent = "<<bytes_sent<<endl;
 	free(data);	//Only client serialize uses malloc
 }
 
@@ -864,6 +902,7 @@ Client::queryTracker() {
 	int size = 1;	//packet size doesnt matter for query
 	int sockfd = trackerfd;
 
+	cout<<"Query tracker"<<endl;
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
 	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
@@ -879,7 +918,7 @@ Client::queryTracker() {
 	data = new char[size];
 	bytes_rcvd = recv(sockfd, data, size, 0);
 	assert(bytes_rcvd == size);
-	cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
+	//cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
 
 	int num_clients, offset = 0;
 	memcpy((char *)&num_clients, data + offset, sizeof(int));
@@ -893,9 +932,9 @@ Client::queryTracker() {
 		Client c;
 		c.deserialize(data + offset, csize);
 		offset += csize;
-		c.print();
+		//c.print();
 		if (c.getIP() == ip_address && c.getPort() == port) {
-			cout<<"Self - ignore."<<endl;
+			//cout<<"Self - ignore."<<endl;
 		} else {
 			peers.push_back(c);
 		}
@@ -996,7 +1035,7 @@ getRangeOffset(char *header, int& start, int& end) {
 	char *tmp = strtok_r(range, "-", &buffer);
 	//cout<<tmp<<endl;
 	start = atoi(tmp);
-	cout<<start<<endl;
+	//cout<<start<<endl;
 }
 
 // return file size in bytes
@@ -1004,7 +1043,7 @@ int
 readFile(const char *name) {
 	struct stat st;
 	stat(name, &st);
-	cout<<"File size = "<<st.st_size<<endl;
+	//cout<<"File size = "<<st.st_size<<endl;
 	return st.st_size;
 }
 
@@ -1015,6 +1054,6 @@ getFileName(char *header) {
 	//cout<<name<<endl;
 	name += strlen("GET /");
 	char *tmp = strtok_r(name, " ", &buffer);
-	cout<<tmp<<endl;
+	//cout<<tmp<<endl;
 	return tmp;
 }
