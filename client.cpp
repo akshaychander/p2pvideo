@@ -168,7 +168,7 @@ void queryTracker(int sockfd, Client& clnt) {
 		offset += csize;
 		c.print();
 	}
-	delete[] data;
+	delete data;
 
 }
 */
@@ -182,8 +182,14 @@ struct pargs {
 
 void *prefetcher(void *args) {
 	struct pargs *myargs = (struct pargs *)args;
-	char *filedata = c.getBlock(myargs->name, myargs->offset, 0, myargs->bsize, myargs->fsize);
-	delete[] filedata;
+	for (int i = 0; i < 2; i++) {
+		int startoffset = c.getPrefetchOffset(myargs->name, myargs->offset, myargs->bsize, myargs->fsize);
+		if (startoffset != -1) {
+			char *filedata = c.getBlock(myargs->name, startoffset, 0, myargs->bsize, myargs->fsize);
+			delete filedata;
+		}
+		myargs->offset = startoffset + ((5 + (rand() % 5)) * myargs->bsize);
+	}
 }
 void *
 handleStreaming(void *param) {
@@ -197,7 +203,7 @@ handleStreaming(void *param) {
 			cout<<"accept failed with error: "<<strerror(errno)<<endl;
 			exit(1);
 		} else {
-			cout<<"got connection: "<<new_fd<<endl;
+			//cout<<"got connection: "<<new_fd<<endl;
 			char header[1024];
 			memset(header, 0, 1024);
 			int chunk_size = 1000000;
@@ -215,7 +221,7 @@ handleStreaming(void *param) {
 				if (offset >= 3) {
 					if (memcmp(header + offset - 3, crlf, 4) == 0) {
 						//cout<<"done!"<<endl;
-						cout<<"header:\n"<<header<<endl;
+						//cout<<"header:\n"<<header<<endl;
 						int start, end;
 						getRangeOffset(header, start, end);
 						char *requrl = getFileName(header);
@@ -229,27 +235,28 @@ handleStreaming(void *param) {
 							"Content-Type: video/webm\r\nContent-Range: bytes "
 							"%d-%d/%d\r\nTransfer-Encoding: chunked\r\n\r\n",
 							range_offset, end_range, filesize);
-						cout<<response<<endl;
+						//cout<<response<<endl;
 						//cout<<"num bytes = "<<num_bytes<<endl;
 						//cout<<"Bytes sent = "<<send(new_fd, response, header_bytes, 0)<<endl;
 						sendSocketData(new_fd, header_bytes, response);
 						int size_bytes = sprintf(response, "%x\r\n", num_bytes);
-						cout<<response<<endl;
-						cout<<"size bytes = "<<size_bytes<<" num_bytes = "<<num_bytes<<endl;
+						//cout<<response<<endl;
+						//cout<<"size bytes = "<<size_bytes<<" num_bytes = "<<num_bytes<<endl;
 						//send(new_fd, response, size_bytes, 0);
 						sendSocketData(new_fd, size_bytes, response);
 						//cout<<"File bytes sent = "<<send(new_fd, filedata, num_bytes, 0)<<endl;
 						sendSocketData(new_fd, num_bytes, filedata);
 						size_bytes = sprintf(response, "\r\n0\r\n\r\n");
-						cout<<response<<endl;
+						//cout<<response<<endl;
 						//send(new_fd, response, size_bytes, 0);
 						sendSocketData(new_fd, size_bytes, response);
-						delete[] filedata;
+						delete filedata;
 						offset = 0;
-						int newstart = range_offset + (3 + (rand() % 5)) * num_bytes;
+						//int newstart = range_offset + (3 + (rand() % 5)) * num_bytes;
 						//int newstart = range_offset + (17) * num_bytes;
+						int newstart = range_offset + num_bytes;
 						if (newstart < filesize) {
-							cout<<"Prefetching random block with offset "<<newstart<<endl;
+							//cout<<"Prefetching random block with offset "<<newstart<<endl;
 							struct pargs args;
 							sprintf(args.name, "%s", requrl);
 							args.offset = newstart;
@@ -273,7 +280,7 @@ handleQuery(void *param) {
 		pthread_rwlock_wrlock(&client_mutex);
 		c.queryTracker();
 		pthread_rwlock_unlock(&client_mutex);
-		sleep(5);
+		sleep(10);
 	}
 }
 

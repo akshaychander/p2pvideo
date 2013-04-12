@@ -1,5 +1,8 @@
 #include "common.h"
+#include <algorithm>
 #define DEFAULT_BLK_SIZE	1000000
+
+pthread_mutex_t fetch_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void
 sendSocketData(int sockfd, int size, char *data) {
@@ -32,7 +35,7 @@ int getVideoLength(string url) {
 	int retries = 1;
 
 	sprintf(command, "./youtube_get_video_size.pl https://www.youtube.com/watch?v=%s", url.c_str());
-	cout<<"Command is "<<command<<endl;
+	//cout<<"Command is "<<command<<endl;
 	FILE *fp = NULL;
 	fp = popen(command, "r");
 	if (!fp) {
@@ -45,7 +48,7 @@ int getVideoLength(string url) {
 			cout<<"Could not get output from script!"<<endl;
 			exit(1);
 		}
-		cout<<"video length is "<<buffer<<endl;
+		//cout<<"video length is "<<buffer<<endl;
 		break;
 	}
 	pclose(fp);
@@ -254,7 +257,7 @@ File::serialize(int &size) const {
 	memcpy(data + offset, blockdata, block_data_size);
 
 	// No longer need the packed blockdata.
-	delete[] blockdata;
+	delete blockdata;
 	return data;
 }
 
@@ -273,7 +276,7 @@ File::deserialize(char *data, const int& size) {
 	offset += url_len;
 	tmp[url_len] = '\0';
 	url = tmp;
-	delete[] tmp;
+	delete tmp;
 
 	memcpy((char *)&filesize, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -394,7 +397,7 @@ Client::initialize() {
 char *
 Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsize) {
 
-	cout<<"name = "<<name<<endl;
+	//cout<<"name = "<<name<<endl;
 	pthread_t pf;
 	//pthread_rwlock_rdlock(this->client_mutex);	// Upgrading rd to wr not working. investigate later
 	pthread_rwlock_wrlock(this->client_mutex);
@@ -457,14 +460,26 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	//cout<<"Blocksize according to file = "<<blocksize<<endl;
 	fsize = filesize;
 	int blocknum = start / blocksize;
-	BlockMap b = f.getBlockInfo();
 	int blockOffset = start - blocknum * blocksize;
 	string folder = url_to_folder[name];
 	char tmp[10];
 	sprintf(tmp, "%d", blocknum);
 	string blockname = folder + "/" + tmp;
+	pthread_mutex_lock(&fetch_mutex);
+	while (std::find(files[i].downloading.begin(), files[i].downloading.end(), blocknum) != files[i].downloading.end()) {
+		cout<<"Block "<<blocknum<<" already being downloaded"<<endl;
+		pthread_mutex_unlock(&fetch_mutex);
+		pthread_rwlock_unlock(this->client_mutex);
+		sleep(10);
+		pthread_rwlock_wrlock(this->client_mutex);
+		i = getFileIdxByURL(name);
+		pthread_mutex_lock(&fetch_mutex);
+	}
+	BlockMap b = files[i].getBlockInfo();
+
 	char *resp_data = new char[blocksize];
 	if (b.hasBlock(blocknum)) {
+		pthread_mutex_unlock(&fetch_mutex);
 		cout<<"Servicing "<<blocknum<<" from cache"<<endl;
 		FILE *fp = fopen(blockname.c_str(), "r");
 		fseek(fp, blockOffset, 0);
@@ -475,6 +490,8 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		//pthread_create(&pf, NULL, prefetchBlock, (void *)tmpname);
 		return resp_data;
 	} else {
+		files[i].downloading.push_back(blocknum);
+		pthread_mutex_unlock(&fetch_mutex);
 		/* First check if a peer has the block */
 		int peer_id = peerWithBlock(name, blocknum);
 		if (peer_id == -1) {
@@ -482,7 +499,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			int startRange= blocknum * blocksize;
 			int endRange = (startRange + blocksize >= filesize) ? (filesize - 1) : (startRange + blocksize - 1);
 			pthread_rwlock_unlock(this->client_mutex);
-			sprintf(command, "./youtube_get_video.pl https://www.youtube.com/watch?v=%s %s %d %d", name.c_str(), blockname.c_str(), startRange, endRange);
+			sprintf(command, "./youtube_get_video.pl https://www.youtube.com/watch?v=%s %s %d %d > /dev/null", name.c_str(), blockname.c_str(), startRange, endRange);
 			cout<<"Command = "<<command<<endl;
 			/*
 			FILE *fp = popen(command, "r");
@@ -528,6 +545,14 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
 
 			pthread_rwlock_unlock(this->client_mutex);
+			pthread_mutex_lock(&fetch_mutex);
+			vector<int>::iterator it = std::find(files[i].downloading.begin(), files[i].downloading.end(), blocknum);
+			if (it != files[i].downloading.end()) {
+				files[i].downloading.erase(it);
+			} else {
+				cout<<"Could not remove block "<<blocknum<<" from downloading queue"<<endl;
+			}
+			pthread_mutex_unlock(&fetch_mutex);
 			return resp_data;
 			/*
 			FILE *source = fopen(name.c_str(), "r");
@@ -641,19 +666,53 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			resp_size = num_bytes - blockOffset;
 			memcpy(resp_data, recv_data + blockOffset, resp_size);
 			close(peerfd);
-			delete[] recv_data;
+			delete recv_data;
 			pthread_rwlock_unlock(this->client_mutex);
+			pthread_mutex_lock(&fetch_mutex);
+			vector<int>::iterator it = std::find(files[i].downloading.begin(), files[i].downloading.end(), blocknum);
+			if (it != files[i].downloading.end()) {
+				files[i].downloading.erase(it);
+			} else {
+				cout<<"Could not remove block "<<blocknum<<" from downloading queue"<<endl;
+			}
+			pthread_mutex_unlock(&fetch_mutex);
 			return resp_data;
 		}
 	}
 }
 
-/*
-void *
-prefetchBlock(char *name) {
-	cout<<"Prefetching "<<name<<endl;
+int
+Client::getPrefetchOffset(char *name, int offset, int bsize, int fsize) {
+	pthread_rwlock_rdlock(this->client_mutex);
+	int i = getFileIdxByURL(name);
+	if (i == -1) {
+		cout<<"Could not find file!"<<endl;
+		pthread_rwlock_unlock(this->client_mutex);
+		return -1;
+	}
+	BlockMap b = files[i].getBlockInfo();
+	/*
+	int start, end;
+	if (!b.nextBlockRange(start, end)) {
+		cout<<"No more to prefetch!"<<endl;
+		pthread_rwlock_unlock(this->client_mutex);
+		return -1;
+	}
+	*/
+	int start = offset / bsize;
+	while (start * bsize < fsize) {
+		if (b.hasBlock(start) == false) {
+			break;
+		}
+		start++;
+	}
+	pthread_rwlock_unlock(this->client_mutex);
+	if (start * bsize >= fsize) {
+		 return -1;
+	} else {
+		return (start * bsize);
+	}
 }
-*/
 
 void
 Client::sendBlock(int sockfd, string name, int blocknum) {
@@ -782,7 +841,7 @@ Client::serialize(int& size) const {
 
 		memcpy(data + offset, file_data, file_size);
 		offset += file_size;
-		delete[] file_data;
+		delete file_data;
 	}
 	return data;
 }
@@ -800,7 +859,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += tmp_num;
 	tmp[tmp_num] = '\0';
 	ip_address = tmp;
-	delete[] tmp;
+	delete tmp;
 
 	memcpy((char *)&tmp_num, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -818,7 +877,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += tmp_num;
 	tmp[tmp_num] = '\0';
 	directory = tmp;
-	delete[] tmp;
+	delete tmp;
 
 	memcpy((char *)&num_files, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -834,7 +893,7 @@ Client::deserialize(const char *data, const int& size) {
 
 		f.deserialize(file_data, file_size);
 		files.push_back(f);
-		delete[] file_data;
+		delete file_data;
 	}
 }
 
@@ -997,7 +1056,7 @@ Client::queryTracker() {
 			peers.push_back(c);
 		}
 	}
-	delete[] data;
+	delete data;
 }
 
 bool
@@ -1077,7 +1136,7 @@ connectToHost(const string& ip, const int& port) {
 	// connect!
 
 	if (connect(sockfd, res->ai_addr, res->ai_addrlen) == -1) {
-		cout<<"Could not connect to tracker\n"<<endl;
+		cout<<"Could not connect to host\n"<<endl;
 		exit(1);
 		abort();
 	}

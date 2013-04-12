@@ -9,10 +9,9 @@ my $url = $ARGV[0] or die "\nError: You need to specify a YouTube URL\n\n";
 #my $end = $ARGV[3] or die "\nError: You need to specify an end offset\n\n";
 
 my $blockdest = $ARGV[1];
-print $blockdest;
+#print $blockdest;
 my $start = $ARGV[2];
-my $end = $ARGV[3];
- 
+my $end = $ARGV[3]; 
 #my $prefix = defined($ARGV[1]) ? $ARGV[1] : "";
 
 
@@ -26,7 +25,7 @@ $title =~ s/^_//ig;
 $title = lc ($title);
 
 
-my ($download) = $html =~ /"url_encoded_fmt_stream_map"([\s\S]+?)\,/ig;
+my ($download) = $html =~ /"url_encoded_fmt_stream_map"(([\s\S]+?)\,){3}/ig;
 
 $download =~ s/\:\ \"//;
 $download =~ s/%3A/:/g;
@@ -57,12 +56,12 @@ $download =~ s/&itag=\d+&signature=/&signature=/g;
 
 #print "\n Download: $prefix$title.webm\n\n";
 
-print "\n URL: $download \n";
+#print "\n URL: $download \n";
 #system("curl -I '$download' 2>/dev/null | egrep 'Content-Length' | awk '{print \$NF}'");
 #system("wget -Ncq -e \"convert-links=off\" --load-cookies /dev/null --tries=50 --timeout=45 --no-check-certificate \"$download\" -O $prefix$title.webm &");
 my $ret;
-$ret = system("wget -N -e \"convert-links=off\" --load-cookies /dev/null --tries 10 --no-check-certificate \"$download\"  -O \"$blockdest\"");
-print $ret;
+$ret = system("wget -N -e \"convert-links=off\" --load-cookies /dev/null --tries 10 --no-check-certificate \"$download\"  -O \"$blockdest\" 2>/dev/null");
+#print $ret;
 if ($ret != 0) {
 	unlink($blockdest);
 }

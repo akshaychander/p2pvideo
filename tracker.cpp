@@ -4,6 +4,7 @@
 #include <string.h>
 #include <errno.h>
 #include <map>
+#include "parser.h"
 
 #define MAX_THREADS	20
 int port = 7500, sockfd;
@@ -130,8 +131,11 @@ handleClient(void *clientsockfd) {
 		 * Receive header (size is HEADER_SZ always).
 		 * Contains Operation and Packet Size.
 		 */
+		/*
 		int bytes_rcvd = recv(clientfd, header, HEADER_SZ, 0);
 		assert(bytes_rcvd == HEADER_SZ);
+		*/
+		recvSocketData(clientfd, HEADER_SZ, header);
 		int op, packet_size;
 		memcpy((char *)&op, header, sizeof(int));
 		memcpy((char *)&packet_size, header + sizeof(int), sizeof(int));
@@ -144,9 +148,12 @@ handleClient(void *clientsockfd) {
 			 * Receive the client information
 			 */
 			case TRACKER_OP_REGISTER:
+				/*
 				bytes_rcvd = recv(clientfd, data, packet_size, 0);
 				assert(bytes_rcvd == packet_size);
 				cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
+				*/
+				recvSocketData(clientfd, packet_size, data);
 				c.deserialize(data, packet_size);
 				c.print();
 
@@ -231,6 +238,10 @@ handleClient(void *clientsockfd) {
 
 int main() {
 	string ip = "192.168.1.7";
+	char *xmlip;
+	int numthreads;
+	getTrackerConfig(&xmlip, &port, &numthreads); 
+	ip = xmlip;
 	sockfd = bindToPort(ip, port);
 	if (sockfd == -1) {
 		cout<<"Could not create socket or bind to port"<<endl;
@@ -247,7 +258,8 @@ int main() {
 		if (new_fd == -1) {
 			cout<<"accept failed with error: "<<strerror(errno)<<endl;
 		} else {
-			if( pthread_create(&threads[thread_id], NULL, handleClient, (void *)new_fd)) {
+			pthread_t tmpthread;
+			if( pthread_create(&tmpthread, NULL, handleClient, (void *)new_fd)) {
 				cout<<"Thread creating failed"<<endl;
 			}
 			else

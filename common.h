@@ -80,7 +80,11 @@ class File {
 	int filesize;
 	int blocksize;
 
+	// NO need to serialize the below
+
 	public:
+		vector<int> downloading;
+
 		File();
 
 		File(string url);
@@ -144,6 +148,8 @@ class Client {
 		void addFile(File f); //for debugging
 
 		char* getBlock(string name, int start, int req_size, int& resp_size, int& fsize);
+
+		int getPrefetchOffset(char *name, int offset, int bsize, int fsize);
 
 		//friend void * prefetchBlock(char* name);
 		void sendBlock(int sockfd, string name, int blocknum);

@@ -19,7 +19,7 @@ $title =~ s/^_//ig;
 $title = lc ($title);
 
 
-my ($download) = $html =~ /"url_encoded_fmt_stream_map"([\s\S]+?)\,/ig;
+my ($download) = $html =~ /"url_encoded_fmt_stream_map"(([\s\S]+?)\,){3}/ig;
 
 $download =~ s/\:\ \"//;
 $download =~ s/%3A/:/g;

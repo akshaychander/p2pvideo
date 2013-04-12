@@ -1,6 +1,6 @@
 #include "parser.h"
 
-void getTrackerConfig(int* port, int* threads)
+void getTrackerConfig(char** ip, int* port, int* threads)
 {
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL;
@@ -15,6 +15,11 @@ void getTrackerConfig(int* port, int* threads)
 	{
 	        if (cur_node->type == XML_ELEMENT_NODE) 
 		{
+			if(strcmp((char *)cur_node->name,"ip") == 0)
+			{
+				*ip = (char *)malloc(sizeof((char *)cur_node->children->content) * sizeof(char));
+				strcpy(*ip, (char *)cur_node->children->content);
+			}
 			if(strcmp((char *)cur_node->name,"port") == 0)
 			{
 				*port = atoi((char *)cur_node->children->content);
