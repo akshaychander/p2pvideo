@@ -121,6 +121,9 @@ class Client {
 
 	/* Stuff not need to serialize/deserialize */
 	int		trackerfd;
+	unsigned long long from_source;
+	unsigned long long from_cache;
+	unsigned long long from_peer;
 
 	public:
 		pthread_rwlock_t *client_mutex;
@@ -167,6 +170,8 @@ class Client {
 		bool hasFileBlock(const int& file_idx, const int& blocknum);
 
 		int peerWithBlock(const string& name, const int& blocknum);
+
+		void printStats();
 };
 
 /* Bind to given port and return socket fd */

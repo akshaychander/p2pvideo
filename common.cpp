@@ -1,6 +1,6 @@
 #include "common.h"
 #include <algorithm>
-#define DEFAULT_BLK_SIZE	1000000
+#define DEFAULT_BLK_SIZE	250000
 
 pthread_mutex_t fetch_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -37,9 +37,18 @@ int getVideoLength(string url) {
 	sprintf(command, "./youtube_get_video_size.pl https://www.youtube.com/watch?v=%s", url.c_str());
 	//cout<<"Command is "<<command<<endl;
 	FILE *fp = NULL;
-	fp = popen(command, "r");
+	while (retries > 0) {
+		fp = popen(command, "r");
+		if (!fp) {
+			cout<<"Could not get video size! Retrying."<<endl;
+			retries--;
+			continue;
+		} else {
+			break;
+		}
+	}
 	if (!fp) {
-		cout<<"Could not get video size! Retrying."<<endl;
+		cout<<"Could not execute script!"<<endl;
 		exit(1);
 	}
 	char buffer[20];
@@ -392,6 +401,8 @@ Client::initialize() {
 		files.push_back(f);
 	}
 	closedir(dir);
+
+	from_source = from_peer = from_cache = 0;
 }
 
 char *
@@ -484,6 +495,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		FILE *fp = fopen(blockname.c_str(), "r");
 		fseek(fp, blockOffset, 0);
 		resp_size = fread(resp_data, 1, blocksize, fp);
+		from_cache += (resp_size / 1000);
 		fclose(fp);
 		pthread_rwlock_unlock(this->client_mutex);
 		//char *tmpname = (char *)name.c_str();
@@ -531,6 +543,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			resp_size = fread(resp_data, 1, blocksize, fp);
 			fclose(fp);
 			pthread_rwlock_wrlock(this->client_mutex);
+			from_source += ((endRange - startRange + 1) / 1000);
 			i = getFileIdxByURL(name);		//i could have changed due to queryTracker
 			if (i == -1) {
 				cout<<"Client corruption!"<<endl;
@@ -664,6 +677,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			files[i].updateBlockInfo(b);
 			//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
 			resp_size = num_bytes - blockOffset;
+			from_peer += (num_bytes / 1000);
 			memcpy(resp_data, recv_data + blockOffset, resp_size);
 			close(peerfd);
 			delete recv_data;
@@ -691,6 +705,7 @@ Client::getPrefetchOffset(char *name, int offset, int bsize, int fsize) {
 		return -1;
 	}
 	BlockMap b = files[i].getBlockInfo();
+	files[i].getSizeInfo(fsize, bsize);
 	/*
 	int start, end;
 	if (!b.nextBlockRange(start, end)) {
@@ -1079,6 +1094,16 @@ Client::peerWithBlock(const string& name, const int& blocknum) {
 		}
 	}
 	return -1;
+}
+
+void
+Client::printStats() {
+	cout<<endl;
+	cout<<"Statistics!"<<endl;
+	cout<<"Data dowloaded from Youtube: "<<from_source<<endl;
+	cout<<"Data fetched from Peer: "<<from_peer<<endl;
+	cout<<"Data serviced from Cache: "<<from_cache<<endl;
+	cout<<endl;
 }
 
 int

@@ -294,6 +294,16 @@ handleUpdate(void *param) {
 	}
 }
 
+void *
+handleStats(void *param) {
+	while (1) {
+		pthread_rwlock_rdlock(&client_mutex);
+		c.printStats();
+		pthread_rwlock_unlock(&client_mutex);
+		sleep(15);
+	}
+}
+
 int main(int argc, char **argv) {
 	string ip = "localhost";
 	int port = 5000;
@@ -377,10 +387,11 @@ int main(int argc, char **argv) {
 	c.registerWithTracker();
 	c.queryTracker();
 	c.client_mutex = &client_mutex;
-	pthread_t streamer, queryThread, updateThread;
+	pthread_t streamer, queryThread, updateThread, statsThread;
 	pthread_create(&streamer, NULL, handleStreaming, NULL);
 	pthread_create(&queryThread, NULL, handleQuery, NULL);
 	pthread_create(&updateThread, NULL, handleUpdate, NULL);
+	pthread_create(&statsThread, NULL, handleStats, NULL);
 	clients_sockfd = bindToPort(ip, clients_port);
 	if(clients_sockfd == -1)
 	{

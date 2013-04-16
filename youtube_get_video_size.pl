@@ -51,8 +51,16 @@ $download =~ s/&itag=\d+&signature=/&signature=/g;
 #print "\n Download: $prefix$title.webm\n\n";
 
 #print "\n URL: $download \n";
+my ($yurl) = `youtube-dl --skip-download "$url" -f 45 -g`;
+#print $yurl;
 #system("wget -Ncq -e \"convert-links=off\" --load-cookies /dev/null --tries=50 --timeout=45 --no-check-certificate \"$download\" -O $prefix$title.webm &");
-system("curl -I '$download' 2>/dev/null | egrep 'Content-Length' | awk '{print \$NF}'");
+#system("curl -I '$download' 2>/dev/null | egrep 'Content-Length' | awk '{print \$NF}'");
+#my ($ret)=system("./curl_script '$download' 2>/dev/null");
+#if ($ret != 0) {
+#	print "ERROR";
+#}
+my ($size) = `./curl_script '$yurl' 2>/dev/null`;
+print $size;
 
 #my ($filesize) = -s "$prefix$title.webm";
 #print $filesize;
