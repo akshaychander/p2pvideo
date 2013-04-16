@@ -168,7 +168,7 @@ void queryTracker(int sockfd, Client& clnt) {
 		offset += csize;
 		c.print();
 	}
-	delete data;
+	delete[] data;
 
 }
 */
@@ -186,9 +186,9 @@ void *prefetcher(void *args) {
 		int startoffset = c.getPrefetchOffset(myargs->name, myargs->offset, myargs->bsize, myargs->fsize);
 		if (startoffset != -1) {
 			char *filedata = c.getBlock(myargs->name, startoffset, 0, myargs->bsize, myargs->fsize);
-			delete filedata;
+			delete[] filedata;
 		}
-		myargs->offset = startoffset + ((5 + (rand() % 5)) * myargs->bsize);
+		myargs->offset = startoffset + ((10 + (rand() % 5)) * myargs->bsize);
 	}
 }
 void *
@@ -250,7 +250,7 @@ handleStreaming(void *param) {
 						//cout<<response<<endl;
 						//send(new_fd, response, size_bytes, 0);
 						sendSocketData(new_fd, size_bytes, response);
-						delete filedata;
+						delete[] filedata;
 						offset = 0;
 						//int newstart = range_offset + (3 + (rand() % 5)) * num_bytes;
 						//int newstart = range_offset + (17) * num_bytes;

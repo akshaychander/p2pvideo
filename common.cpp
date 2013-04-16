@@ -1,8 +1,10 @@
 #include "common.h"
 #include <algorithm>
-#define DEFAULT_BLK_SIZE	250000
+#define DEFAULT_BLK_SIZE	1000000
 
 pthread_mutex_t fetch_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t stats_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 void
 sendSocketData(int sockfd, int size, char *data) {
@@ -266,7 +268,7 @@ File::serialize(int &size) const {
 	memcpy(data + offset, blockdata, block_data_size);
 
 	// No longer need the packed blockdata.
-	delete blockdata;
+	delete[] blockdata;
 	return data;
 }
 
@@ -285,7 +287,7 @@ File::deserialize(char *data, const int& size) {
 	offset += url_len;
 	tmp[url_len] = '\0';
 	url = tmp;
-	delete tmp;
+	delete[] tmp;
 
 	memcpy((char *)&filesize, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -495,7 +497,9 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		FILE *fp = fopen(blockname.c_str(), "r");
 		fseek(fp, blockOffset, 0);
 		resp_size = fread(resp_data, 1, blocksize, fp);
+		pthread_mutex_lock(&stats_mutex);
 		from_cache += (resp_size / 1000);
+		pthread_mutex_unlock(&stats_mutex);
 		fclose(fp);
 		pthread_rwlock_unlock(this->client_mutex);
 		//char *tmpname = (char *)name.c_str();
@@ -543,7 +547,9 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			resp_size = fread(resp_data, 1, blocksize, fp);
 			fclose(fp);
 			pthread_rwlock_wrlock(this->client_mutex);
+			pthread_mutex_lock(&stats_mutex);
 			from_source += ((endRange - startRange + 1) / 1000);
+			pthread_mutex_unlock(&stats_mutex);
 			i = getFileIdxByURL(name);		//i could have changed due to queryTracker
 			if (i == -1) {
 				cout<<"Client corruption!"<<endl;
@@ -677,10 +683,12 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			files[i].updateBlockInfo(b);
 			//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
 			resp_size = num_bytes - blockOffset;
+			pthread_mutex_lock(&stats_mutex);
 			from_peer += (num_bytes / 1000);
+			pthread_mutex_unlock(&stats_mutex);
 			memcpy(resp_data, recv_data + blockOffset, resp_size);
 			close(peerfd);
-			delete recv_data;
+			delete[] recv_data;
 			pthread_rwlock_unlock(this->client_mutex);
 			pthread_mutex_lock(&fetch_mutex);
 			vector<int>::iterator it = std::find(files[i].downloading.begin(), files[i].downloading.end(), blocknum);
@@ -856,7 +864,7 @@ Client::serialize(int& size) const {
 
 		memcpy(data + offset, file_data, file_size);
 		offset += file_size;
-		delete file_data;
+		delete[] file_data;
 	}
 	return data;
 }
@@ -874,7 +882,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += tmp_num;
 	tmp[tmp_num] = '\0';
 	ip_address = tmp;
-	delete tmp;
+	delete[] tmp;
 
 	memcpy((char *)&tmp_num, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -892,7 +900,7 @@ Client::deserialize(const char *data, const int& size) {
 	offset += tmp_num;
 	tmp[tmp_num] = '\0';
 	directory = tmp;
-	delete tmp;
+	delete[] tmp;
 
 	memcpy((char *)&num_files, data + offset, sizeof(int));
 	offset += sizeof(int);
@@ -908,7 +916,7 @@ Client::deserialize(const char *data, const int& size) {
 
 		f.deserialize(file_data, file_size);
 		files.push_back(f);
-		delete file_data;
+		delete[] file_data;
 	}
 }
 
@@ -1071,7 +1079,7 @@ Client::queryTracker() {
 			peers.push_back(c);
 		}
 	}
-	delete data;
+	delete[] data;
 }
 
 bool
