@@ -34,6 +34,8 @@ enum {
 	CLIENT_REQ_DATA
 };
 
+#define STATS_SLEEP_TIME	15
+
 /*
  * Each File will have a corresponding BlockMap associated with it.
  * BlockMap is basically a collection of key-value pairs, with the block number

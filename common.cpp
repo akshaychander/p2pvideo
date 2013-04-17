@@ -1126,12 +1126,14 @@ Client::peerWithBlock(const string& name, const int& blocknum) {
 
 void
 Client::printStats() {
+	static int ctime = 0;
 	cout<<endl;
-	cout<<"Statistics!"<<endl;
+	cout<<"Statistics at time "<<ctime<<"!"<<endl;
 	cout<<"Data dowloaded from Youtube: "<<from_source<<endl;
 	cout<<"Data fetched from Peer: "<<from_peer<<endl;
 	cout<<"Data serviced from Cache: "<<from_cache<<endl;
 	cout<<endl;
+	ctime += STATS_SLEEP_TIME;
 }
 
 int

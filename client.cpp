@@ -314,7 +314,7 @@ handleStats(void *param) {
 		pthread_rwlock_rdlock(&client_mutex);
 		c.printStats();
 		pthread_rwlock_unlock(&client_mutex);
-		sleep(15);
+		sleep(STATS_SLEEP_TIME);
 	}
 }
 
