@@ -642,7 +642,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		pthread_rwlock_unlock(this->client_mutex);
 		sprintf(command, "./youtube_get_video.pl https://www.youtube.com/watch?v=%s %s %d %d > /dev/null", name.c_str(), blockname.c_str(), startRange, endRange);
 		cout<<"Command = "<<command<<endl;
-		int retries = 5;
+		int retries = 10;
 
 		FILE *fp = NULL;
 		while (retries > 0) {
@@ -655,6 +655,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 				}
 				retries--;
 				cout<<"Retrying!"<<endl;
+				sleep(1);
 
 			} else {
 				break;
