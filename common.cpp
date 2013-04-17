@@ -1,32 +1,41 @@
 #include "common.h"
 #include <algorithm>
-#define DEFAULT_BLK_SIZE	1000000
+#define DEFAULT_BLK_SIZE	2000000
 
 pthread_mutex_t fetch_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t stats_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-
-void
+bool
 sendSocketData(int sockfd, int size, char *data) {
 	int bytes_pending = size, start_offset = 0;
 	while (bytes_pending != 0) {
 		int bytes_sent = send(sockfd, data + start_offset, bytes_pending, 0);
+		if (bytes_sent == -1) {
+			cout<<"send failed: "<<strerror(errno)<<endl;
+			return false;
+		}
 		//cout<<"Sent "<<bytes_sent<<" bytes"<<endl;
 		start_offset += bytes_sent;
 		bytes_pending -= bytes_sent;
 	}
+	return true;
 }
 
 //Assumes that memory has been allocated for data
-void
+bool
 recvSocketData(int sockfd, int size, char *data) {
 	int bytes_pending = size, start_offset = 0;
 	while (bytes_pending != 0) {
 		int bytes_rcvd = recv(sockfd, data + start_offset, bytes_pending, 0);
+		if (bytes_rcvd == -1) {
+			cout<<"recv failed: "<<strerror(errno)<<endl;
+			return false;
+		}
 		//cout<<"Received "<<bytes_rcvd<<" bytes"<<endl;
 		bytes_pending -= bytes_rcvd;
 		start_offset += bytes_rcvd;
 	}
+	return true;
 }
 
 /*
@@ -416,7 +425,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	pthread_rwlock_wrlock(this->client_mutex);
 	int i = getFileIdxByURL(name);
 	if (i == -1) {
-		cout<<"Not found in cache!"<<endl;
+		//cout<<"Not found in cache!"<<endl;
 		int filesize = getVideoLength(name.c_str());
 		int blocksize = DEFAULT_BLK_SIZE;
 		int num_blocks = filesize / blocksize;
@@ -478,12 +487,14 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	char tmp[10];
 	sprintf(tmp, "%d", blocknum);
 	string blockname = folder + "/" + tmp;
+	int prefetched = 0;
 	pthread_mutex_lock(&fetch_mutex);
 	while (std::find(files[i].downloading.begin(), files[i].downloading.end(), blocknum) != files[i].downloading.end()) {
-		cout<<"Block "<<blocknum<<" already being downloaded"<<endl;
+		prefetched = 1;
+		//cout<<"Block "<<blocknum<<" already being downloaded"<<endl;
 		pthread_mutex_unlock(&fetch_mutex);
 		pthread_rwlock_unlock(this->client_mutex);
-		sleep(10);
+		sleep(2);
 		pthread_rwlock_wrlock(this->client_mutex);
 		i = getFileIdxByURL(name);
 		pthread_mutex_lock(&fetch_mutex);
@@ -493,7 +504,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 	char *resp_data = new char[blocksize];
 	if (b.hasBlock(blocknum)) {
 		pthread_mutex_unlock(&fetch_mutex);
-		cout<<"Servicing "<<blocknum<<" from cache"<<endl;
+		//cout<<"Servicing "<<blocknum<<" from cache"<<endl;
 		FILE *fp = fopen(blockname.c_str(), "r");
 		fseek(fp, blockOffset, 0);
 		resp_size = fread(resp_data, 1, blocksize, fp);
@@ -506,6 +517,10 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		//pthread_create(&pf, NULL, prefetchBlock, (void *)tmpname);
 		return resp_data;
 	} else {
+		if (prefetched == 1) {
+			cout<<"Should have been in cache!"<<endl;
+			abort();
+		}
 		files[i].downloading.push_back(blocknum);
 		pthread_mutex_unlock(&fetch_mutex);
 		/* First check if a peer has the block */
@@ -548,19 +563,20 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			fclose(fp);
 			pthread_rwlock_wrlock(this->client_mutex);
 			pthread_mutex_lock(&stats_mutex);
-			from_source += ((endRange - startRange + 1) / 1000);
 			pthread_mutex_unlock(&stats_mutex);
 			i = getFileIdxByURL(name);		//i could have changed due to queryTracker
 			if (i == -1) {
 				cout<<"Client corruption!"<<endl;
 				exit(1);
 			}
-			b = f.getBlockInfo();
-			if (b.hasBlock(blocknum)) {
+			b = files[i].getBlockInfo();
+			if (!b.hasBlock(blocknum)) {
+				b.setBlock(blocknum);
+				files[i].updateBlockInfo(b);
+				//cout<<"For block "<<blocknum<<" increment fetch_source by "<<((endRange - startRange + 1) / 1000)<<endl;
+				from_source += ((endRange - startRange + 1) / 1000);
 			}
-			b.setBlock(blocknum);
 			//pthread_rwlock_wrlock(this->client_mutex);	//upgrade to write lock
-			files[i].updateBlockInfo(b);
 			//pthread_rwlock_unlock(this->client_mutex);	//downgrade to read lock
 
 			pthread_rwlock_unlock(this->client_mutex);
@@ -600,7 +616,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			return resp_data;
 			*/
 		} else {
-			cout<<"Peer "<<peer_id<<" has block."<<endl;
+			//cout<<"Peer "<<peer_id<<" has block."<<endl;
 			Client peer = peers[peer_id];
 			string peer_ip_address = peer.getIP();
 			int port = peer.getPort();
@@ -1009,7 +1025,7 @@ Client::updateOnTracker() {
 	int size;
 	int sockfd = trackerfd;
 
-	cout<<"UPdate tracker"<<endl;
+	//cout<<"UPdate tracker"<<endl;
 	data = serialize(size);
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
@@ -1036,7 +1052,7 @@ Client::queryTracker() {
 	int size = 1;	//packet size doesnt matter for query
 	int sockfd = trackerfd;
 
-	cout<<"Query tracker"<<endl;
+	//cout<<"Query tracker"<<endl;
 	memcpy(header, (char *)&op, sizeof(int));
 	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
 	/*
@@ -1079,6 +1095,35 @@ Client::queryTracker() {
 			peers.push_back(c);
 		}
 	}
+	delete[] data;
+}
+
+void
+Client::disconnect() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_QUIT;
+	char *data;
+	int size;	//packet size doesnt matter for disconnect
+	int sockfd = trackerfd;
+
+	int len = ip_address.length();
+	size = sizeof(int) + len;
+	//cout<<"Query tracker"<<endl;
+	memcpy(header, (char *)&op, sizeof(int));
+	memcpy(header + sizeof(int), (char *)&size, sizeof(int));
+	/*
+	int bytes_sent = send(sockfd, header, HEADER_SZ, 0);
+	assert(bytes_sent == HEADER_SZ);
+	*/
+	sendSocketData(sockfd, HEADER_SZ, header);
+
+	data = new char[size];
+	int offset = 0;
+	char *tmp = (char *)ip_address.c_str();
+	memcpy(data + offset, (char *)&len, sizeof(int));
+	offset += sizeof(int);
+	memcpy(data + offset, tmp, len);
+	sendSocketData(sockfd, size, data);
 	delete[] data;
 }
 
@@ -1207,3 +1252,4 @@ getFileName(char *header) {
 	//cout<<tmp<<endl;
 	return tmp;
 }
+

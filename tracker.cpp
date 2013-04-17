@@ -11,10 +11,7 @@ int port = 7500, sockfd;
 Tracker t(port);
 
 /* Mutexes initilized */
-static pthread_mutex_t _mutex1 = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t _mutex2 = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t _mutex3 = PTHREAD_MUTEX_INITIALIZER;
-
+static pthread_mutex_t _mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Tracker::Tracker(int port) {
 	this->port = port;
@@ -70,6 +67,17 @@ Tracker::update(Client& clnt, const File& file) {
 	}
 	int file_idx = clnt.getFileIdxByURL(file.getURL());
 	clnt.updateFile(file_idx, file.getBlockInfo());
+}
+
+void
+Tracker::deleteClient(string ip) {
+	int idx = getClientIdxByIP(ip);
+	if (idx == -1) {
+		cout<<"Invalid client!"<<endl;
+		return;
+	}
+	p2pnodes.erase(p2pnodes.begin() + idx);
+	print();
 }
 
 char *
@@ -157,10 +165,10 @@ handleClient(void *clientsockfd) {
 				c.deserialize(data, packet_size);
 				c.print();
 
-				pthread_mutex_lock(&_mutex1);
+				pthread_mutex_lock(&_mutex);
 				t.client_register(c);
 				t.print();
-				pthread_mutex_unlock(&_mutex1);
+				pthread_mutex_unlock(&_mutex);
 
 				break;
 
@@ -170,9 +178,9 @@ handleClient(void *clientsockfd) {
 				char response_header[HEADER_SZ];
 
 				cout<<"Query from client"<<endl;
-				pthread_mutex_lock(&_mutex2);
+				pthread_mutex_lock(&_mutex);
 				tdata = t.serialize(tsize);
-				pthread_mutex_unlock(&_mutex2);
+				pthread_mutex_unlock(&_mutex);
 
 				// op is not required, but makes things more consistent.
 				memcpy(response_header, (char *)&op, sizeof(int));
@@ -227,10 +235,24 @@ handleClient(void *clientsockfd) {
 				c.deserialize(data, packet_size);
 				//c.print();
 
-				pthread_mutex_lock(&_mutex3);
+				pthread_mutex_lock(&_mutex);
 				t.update(c);
 				//t.print();
-				pthread_mutex_unlock(&_mutex3);
+				pthread_mutex_unlock(&_mutex);
+				break;
+
+			case TRACKER_OP_QUIT:
+				int len;
+				recvSocketData(clientfd, packet_size, data);
+				memcpy((char *)&len, data, sizeof(int));
+				char *tmp = new char[len + 1];
+				memcpy(tmp, data + sizeof(int), len);
+				tmp[len] = '\0';
+				string ip_addr = tmp;
+				delete[] tmp;
+				pthread_mutex_lock(&_mutex);
+				t.deleteClient(ip_addr);
+				pthread_mutex_unlock(&_mutex);
 				break;
 		}
 	}

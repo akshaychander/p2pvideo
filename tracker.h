@@ -11,6 +11,7 @@ class Tracker {
 		bool update(int idx, const File& file);
 		bool update(Client& clnt);
 		bool update(Client& clnt, const File& file);
+		void deleteClient(string ip);
 		BlockMap query(const File& file);
 		char *serialize(int& size);
 		void deserialize(const char *data, const int& size);

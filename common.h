@@ -29,6 +29,7 @@ enum {
 	TRACKER_OP_REGISTER = 0,
 	TRACKER_OP_QUERY,
 	TRACKER_OP_UPDATE,
+	TRACKER_OP_QUIT,
 	TRACKER_OP_KEEP_ALIVE,
 	CLIENT_REQ_DATA
 };
@@ -167,6 +168,8 @@ class Client {
 
 		void queryTracker();
 
+		void disconnect();
+
 		bool hasFileBlock(const int& file_idx, const int& blocknum);
 
 		int peerWithBlock(const string& name, const int& blocknum);
@@ -181,5 +184,5 @@ void getRangeOffset(char *header, int& start, int& end);
 int readFile(const char *name);
 char *getFileName(char *header);
 //void* prefetchBlock(char *name);
-void sendSocketData(int sockfd, int size, char *data);
-void recvSocketData(int sockfd, int size, char *data);
+bool sendSocketData(int sockfd, int size, char *data);
+bool recvSocketData(int sockfd, int size, char *data);

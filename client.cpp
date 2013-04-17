@@ -17,6 +17,18 @@ Client c;
 
 pthread_rwlock_t client_mutex;
 
+void signalHandler(int signum, siginfo_t *info, void *ptr) {
+	switch (signum) {
+		case SIGPIPE:
+			//Just ignore
+			break;
+
+		case SIGTERM:
+		case SIGINT:
+			c.disconnect();
+			exit(0);
+	}
+}
 /*
  * Function to transfer the file between peers. Receives request for a block and
  * sends that block. Closes connection after transfer is complete.
@@ -305,6 +317,12 @@ handleStats(void *param) {
 }
 
 int main(int argc, char **argv) {
+	struct sigaction handler;
+	handler.sa_sigaction = signalHandler;
+	handler.sa_flags = SA_SIGINFO;
+	sigaction(SIGINT, &handler, NULL);
+	sigaction(SIGPIPE, &handler, NULL);
+	sigaction(SIGTERM, &handler, NULL);
 	string ip = "localhost";
 	int port = 5000;
 	string tracker_ip = "127.0.0.1";
