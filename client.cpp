@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <iostream>
 #include "parser.h"
+#include <sys/time.h>
 
 #define MAX_CLIENT_THREADS 7
 
@@ -200,7 +201,8 @@ void *prefetcher(void *args) {
 			char *filedata = c.getBlock(myargs->name, startoffset, 0, myargs->bsize, myargs->fsize);
 			delete[] filedata;
 		}
-		myargs->offset = startoffset + ((10 + (rand() % 5)) * myargs->bsize);
+		//myargs->offset = startoffset + ((10 + (rand() % 5)) * myargs->bsize);
+		myargs->offset = startoffset + ((10 + (time(NULL) % 5)) * myargs->bsize);
 	}
 }
 void *
@@ -292,7 +294,7 @@ handleQuery(void *param) {
 		pthread_rwlock_wrlock(&client_mutex);
 		c.queryTracker();
 		pthread_rwlock_unlock(&client_mutex);
-		sleep(10);
+		sleep(3);
 	}
 }
 
@@ -302,7 +304,7 @@ handleUpdate(void *param) {
 		pthread_rwlock_rdlock(&client_mutex);
 		c.updateOnTracker();
 		pthread_rwlock_unlock(&client_mutex);
-		sleep(5);
+		sleep(3);
 	}
 }
 
