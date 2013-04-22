@@ -5,6 +5,8 @@
 pthread_mutex_t fetch_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t stats_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+int cache_size;
+
 bool
 sendSocketData(int sockfd, int size, char *data) {
 	int bytes_pending = size, start_offset = 0;
@@ -122,6 +124,16 @@ BlockMap::setBlock(int blockNumber) {
 		}
 	} else {
 		abort();
+	}
+}
+
+bool
+BlockMap::unsetBlock(int blockNumber) {
+	if (blockNumber < numBlocks) {
+		blocks[blockNumber] = false;
+		if (blockNumber < currentBlock) {
+			currentBlock = blockNumber;
+		}
 	}
 }
 
@@ -324,6 +336,7 @@ Client::Client(string ip_address, int port, string directory) {
 	this->port = port;
 	this->directory = directory;
 	this->socketfd = -1;	//for debugging
+	this->cache_used = 0;
 	initialize();
 	/* Bind to port and store the socketfd */
 	/* Initialize list of files and blockmaps */
@@ -406,6 +419,11 @@ Client::initialize() {
 			int blocknum = atoi(urlresult->d_name);
 			//cout<<"Have block: "<<blocknum<<endl;
 			bmap[blocknum] = true;
+			if (blocknum != num_blocks - 1) {
+				cache_used += blocksize;
+			} else {
+				cache_used += (filesize % blocksize);
+			}
 		}
 		closedir(urldir);
 		File f(filename, bmap, filesize, blocksize);
@@ -414,6 +432,67 @@ Client::initialize() {
 	closedir(dir);
 
 	from_source = from_peer = from_cache = 0;
+}
+
+/* Called holding exclusive lock (client_mutex) and having locked fetch_mutex */
+void
+Client::handleCache(string name) {
+	cout<<"Cache used at the beginning = "<<cache_used<<endl;
+	int idx = getFileIdxByURL(name);
+	int begin = time(NULL) % files.size();
+	for (int tries = 5; tries > 0; tries--) {
+		int i = begin;
+		while (1) {
+			if (i == idx) {
+				i = (i + 1) % files.size();
+				if (i == begin) {
+					break;
+				} else {
+					continue;
+				}
+			}
+			BlockMap b = files[i].getBlockInfo();
+			int bsize, fsize;
+			files[i].getSizeInfo(fsize, bsize);
+			int numblocks = fsize / bsize;
+			if (fsize % bsize != 0) {
+				numblocks++;
+			}
+			int start, end;
+			b.nextBlockRange(start, end);
+			start--;
+			int numDeleted = 0;
+			string fname = files[i].getURL();
+			string folder = url_to_folder[fname];
+			char tmp[10];
+			while (numDeleted < 10 && start >= 0) {
+				memset(tmp, 0, sizeof(char) * 10);
+				sprintf(tmp, "%d", start);
+				string blockname = folder + "/" + tmp;
+				if (unlink(blockname.c_str()) == 0) {
+					//cout<<"Deleting "<<blockname<<endl;
+					b.unsetBlock(start);
+				}
+				if (start != (numblocks - 1)) {
+					cache_used -= bsize;
+				} else {
+					cache_used -= (fsize % bsize);
+				}
+				start--;
+				numDeleted++;
+			}
+			files[i].updateBlockInfo(b);
+			if (cache_used / (cache_size / 100) < 85) {
+				tries = 0;
+				break;
+			}
+			i = (i + 1) % files.size();
+			if (i == begin) {
+				break;
+			}
+		}
+	}
+	cout<<"Cache used at the end = "<<cache_used<<endl;
 }
 
 char *
@@ -522,6 +601,9 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 			abort();
 		}
 		files[i].downloading.push_back(blocknum);
+		if (cache_used / (cache_size / 100) > 90) {
+			handleCache(name);
+		}
 		pthread_mutex_unlock(&fetch_mutex);
 		/* First check if a peer has the block */
 		int peer_id = peerWithBlock(name, blocknum);
@@ -599,6 +681,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 				fwrite(recv_data, 1, num_bytes, blockfile);
 				fclose(blockfile);
 				pthread_rwlock_wrlock(this->client_mutex);
+				cache_used += num_bytes;
 				i = getFileIdxByURL(name);		//i could have changed due to queryTracker
 				if (i == -1) {
 					cout<<"Client corruption!"<<endl;
@@ -665,6 +748,7 @@ Client::getBlock(string name, int start, int req_size, int& resp_size, int& fsiz
 		resp_size = fread(resp_data, 1, blocksize, fp);
 		fclose(fp);
 		pthread_rwlock_wrlock(this->client_mutex);
+		cache_used += resp_size;
 		i = getFileIdxByURL(name);		//i could have changed due to queryTracker
 		if (i == -1) {
 			cout<<"Client corruption!"<<endl;

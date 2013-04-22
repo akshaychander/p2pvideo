@@ -62,6 +62,8 @@ class BlockMap {
 
 		bool setBlock(int blockNumber);
 
+		bool unsetBlock(int blockNumber);
+
 		bool nextBlockRange(int& start, int& end);
 
 		char *serialize(int& size) const;
@@ -127,6 +129,7 @@ class Client {
 	unsigned long long from_source;
 	unsigned long long from_cache;
 	unsigned long long from_peer;
+	int cache_used;
 
 	public:
 		pthread_rwlock_t *client_mutex;
@@ -152,6 +155,8 @@ class Client {
 		void print();
 
 		void addFile(File f); //for debugging
+
+		void handleCache(string name);
 
 		char* getBlock(string name, int start, int req_size, int& resp_size, int& fsize);
 

@@ -32,7 +32,8 @@ void getTrackerConfig(char** ip, int* port, int* threads)
     	}
 }
 
-void getClientConfig(char** tracker_ip, int* tracker_port, char** own_ip, int *peer_port, int *stream_port, char** str_dir, int* block_size)
+void getClientConfig(char** tracker_ip, int* tracker_port, char** own_ip, int
+*peer_port, int *stream_port, char** str_dir, int* block_size, int* cache_size)
 {
 	xmlDoc *doc = NULL;
 	xmlNode *root_element = NULL;
@@ -86,6 +87,10 @@ void getClientConfig(char** tracker_ip, int* tracker_port, char** own_ip, int *p
 			if(strcmp((char *)cur_node->name,"blocksize") == 0)
 			{
 				*block_size = atoi((char *)cur_node->children->content);
+			}
+			if(strcmp((char *)cur_node->name,"cachesize") == 0)
+			{
+				*cache_size = atoi((char *)cur_node->children->content);
 			}
 	        }
     	}

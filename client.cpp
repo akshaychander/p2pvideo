@@ -15,7 +15,7 @@ int streaming_port = 10000;
 string storage_directory;
 
 Client c;
-
+extern int cache_size;
 pthread_rwlock_t client_mutex;
 
 void signalHandler(int signum, siginfo_t *info, void *ptr) {
@@ -332,7 +332,7 @@ int main(int argc, char **argv) {
 	storage_directory = "/home/deepthought/sandbox/p2pvideo/files";
 	char *tip, *dir, *cip;
 	int bsize;
-	getClientConfig(&tip, &tracker_port, &cip, &clients_port, &streaming_port, &dir, &bsize);
+	getClientConfig(&tip, &tracker_port, &cip, &clients_port, &streaming_port, &dir, &bsize, &cache_size);
 	tracker_ip = tip;
 	ip = cip;
 	storage_directory = dir;
