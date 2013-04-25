@@ -176,6 +176,8 @@ class Client {
 
 		void queryTracker();
 
+		void querySelfTracker();
+
 		void disconnect();
 
 		bool hasFileBlock(const int& file_idx, const int& blocknum);

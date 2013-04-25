@@ -1188,6 +1188,7 @@ Client::queryTracker() {
 		c.deserialize(data + offset, csize);
 		offset += csize;
 		//c.print();
+		t.client_register(c);
 		if (c.getIP() == ip_address && c.getPort() == port) {
 			//cout<<"Self - ignore."<<endl;
 		} else {
@@ -1200,6 +1201,41 @@ Client::queryTracker() {
 				registerWithTracker();
 				close(trackerfd);
 			}
+		}
+	}
+	delete[] data;
+}
+
+void
+Client::querySelfTracker() {
+	char header[HEADER_SZ];
+	int op = TRACKER_OP_QUERY;
+	char *data;
+	int size = 1;	//packet size doesnt matter for query
+	int sockfd = trackerfd;
+
+	int num_clients, offset = 0;
+	data = t.serialize(size);
+	/*
+	   bytes_rcvd = recv(sockfd, data, size, 0);
+	   assert(bytes_rcvd == size);
+	 */
+	//cout<<"bytes_rcvd = "<<bytes_rcvd<<endl;
+	memcpy((char *)&num_clients, data + offset, sizeof(int));
+	offset += sizeof(int);
+	peers.clear();
+	for (int i = 0; i < num_clients; i++) {
+		int csize;
+		memcpy((char *)&csize, data + offset, sizeof(int));
+		offset += sizeof(int);
+		Client c;
+		c.deserialize(data + offset, csize);
+		offset += csize;
+		//c.print();
+		if (c.getIP() == ip_address && c.getPort() == port) {
+			//cout<<"Self - ignore."<<endl;
+		} else {
+			peers.push_back(c);
 		}
 	}
 	delete[] data;

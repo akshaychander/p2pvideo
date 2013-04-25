@@ -296,7 +296,8 @@ handleQuery(void *param) {
 	while (1) {
 		pthread_rwlock_wrlock(&client_mutex);
 		c.setTrackerFd(FIRST_NODE);
-		c.queryTracker();
+		//c.queryTracker();
+		c.querySelfTracker();
 		pthread_rwlock_unlock(&client_mutex);
 		sleep(3);
 	}
