@@ -9,7 +9,7 @@
 int clients_port = 7501;  	// Each client listens on this port for incoming connections from other clients
 int clients_sockfd;		// Client socket fd
 int tracker_fd;
-
+string dht_tracker_ip;
 int streaming_port = 10000;
 
 string storage_directory;
@@ -296,6 +296,7 @@ handleQuery(void *param) {
 	while (1) {
 		pthread_rwlock_wrlock(&client_mutex);
 		c.setTrackerFd(FIRST_NODE);
+		c.queryTracker();
 		pthread_rwlock_unlock(&client_mutex);
 		sleep(3);
 	}
@@ -324,7 +325,7 @@ handleStats(void *param) {
 
 void *
 handleTracker(void *param) {
-	string ip = "127.0.0.1";
+	string ip = dht_tracker_ip;
 	/*
 	char *xmlip;
 	int numthreads;
@@ -380,6 +381,7 @@ int main(int argc, char **argv) {
 	getClientConfig(&tip, &tracker_port, &cip, &clients_port, &streaming_port, &dir, &bsize, &cache_size);
 	tracker_ip = tip;
 	ip = cip;
+	dht_tracker_ip = ip;
 	storage_directory = dir;
 	if (argc == 5) {
 		ip = argv[1];
@@ -450,6 +452,7 @@ int main(int argc, char **argv) {
 	c = tmpc;
 	c.connectToTracker(tracker_ip, tracker_port);
 	c.registerWithTracker();
+	c.connectToTracker(tracker_ip, tracker_port);
 	c.queryTracker();
 	c.client_mutex = &client_mutex;
 	pthread_t streamer, queryThread, updateThread, statsThread, trackerThread;
@@ -458,6 +461,7 @@ int main(int argc, char **argv) {
 	pthread_create(&updateThread, NULL, handleUpdate, NULL);
 	pthread_create(&statsThread, NULL, handleStats, NULL);
 	pthread_create(&trackerThread, NULL, handleTracker, NULL);
+	cout<<"ip = "<<ip<<" port = "<<clients_port<<endl;
 	clients_sockfd = bindToPort(ip, clients_port);
 	if(clients_sockfd == -1)
 	{

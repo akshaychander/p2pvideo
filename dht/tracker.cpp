@@ -256,6 +256,7 @@ handleClientTracker(void *clientsockfd, Tracker& t) {
 				break;
 		}
 	//}
+	close(clientfd);
 }
 
 /*
